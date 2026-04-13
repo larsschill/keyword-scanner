@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTG Keyword Scanner</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #111318;
+      --surface:  #1c1f27;
+      --surface2: #252935;
+      --border:   #2e3244;
+      --gold:     #c9a84c;
+      --gold-dim: #8a6e28;
+      --text:     #dde1ec;
+      --muted:    #7a7f99;
+      --error:    #e05c6a;
+      --radius:   10px;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2.5rem 1rem 4rem;
+    }
+
+    .container { max-width: 860px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    header h1 {
+      font-size: 2.2rem;
+      letter-spacing: .03em;
+      color: var(--gold);
+      text-shadow: 0 0 30px rgba(201,168,76,.25);
+      margin-bottom: .4rem;
+    }
+    header p { color: var(--muted); font-size: 1rem; }
+
+    /* ── Card surface ───────────────────────────────────────── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    /* ── Input form ─────────────────────────────────────────── */
+    .form-row {
+      display: flex;
+      gap: .75rem;
+      flex-wrap: wrap;
+    }
+    .form-row input {
+      flex: 1;
+      min-width: 260px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 1rem;
+      padding: .7rem 1rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .form-row input:focus { border-color: var(--gold); }
+    .form-row input::placeholder { color: var(--muted); }
+
+    .btn {
+      background: var(--gold);
+      border: none;
+      border-radius: 8px;
+      color: #110e00;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: .7rem 1.5rem;
+      transition: opacity .15s, transform .1s;
+      white-space: nowrap;
+    }
+    .btn:hover:not(:disabled) { opacity: .88; }
+    .btn:active:not(:disabled) { transform: scale(.97); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    /* ── Status / error ─────────────────────────────────────── */
+    .status {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      color: var(--muted);
+      font-size: .95rem;
+      padding: .75rem 0 .25rem;
+    }
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin .75s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-box {
+      background: rgba(224,92,106,.08);
+      border: 1px solid rgba(224,92,106,.3);
+      border-radius: var(--radius);
+      color: var(--error);
+      padding: .9rem 1.1rem;
+      font-size: .95rem;
+      margin-bottom: 1.25rem;
+    }
+
+    /* ── Deck info bar ──────────────────────────────────────── */
+    .deck-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .75rem;
+    }
+    .deck-name {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: var(--gold);
+    }
+    .badge {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--muted);
+      font-size: .8rem;
+      padding: .2rem .75rem;
+    }
+
+    /* ── Keyword grid ───────────────────────────────────────── */
+    .section-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      margin-bottom: 1rem;
+    }
+
+    .kw-list { display: flex; flex-direction: column; gap: .6rem; }
+
+    .kw-item {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .9rem 1.1rem;
+      transition: border-color .15s;
+    }
+    .kw-item:hover { border-color: var(--surface2); }
+
+    .kw-header {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      margin-bottom: .45rem;
+    }
+    .kw-name {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--gold);
+    }
+    .kw-count {
+      background: var(--surface2);
+      border-radius: 12px;
+      color: var(--muted);
+      font-size: .78rem;
+      padding: .12rem .55rem;
+    }
+
+    .kw-desc {
+      color: var(--muted);
+      font-size: .88rem;
+      line-height: 1.55;
+      margin-bottom: .5rem;
+    }
+    .kw-desc.unknown { font-style: italic; }
+    .kw-desc a { color: var(--gold-dim); }
+
+    details.kw-cards summary {
+      font-size: .8rem;
+      color: #5a5f7a;
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+    }
+    details.kw-cards summary::-webkit-details-marker { display: none; }
+    details.kw-cards summary::before { content: '+ '; }
+    details[open].kw-cards summary::before { content: '- '; }
+    details.kw-cards summary:hover { color: var(--muted); }
+
+    .card-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .3rem;
+      margin-top: .45rem;
+    }
+    .card-pill {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      font-size: .76rem;
+      padding: .15rem .6rem;
+      color: var(--text);
+    }
+
+    .empty-msg {
+      text-align: center;
+      color: var(--muted);
+      padding: 2rem;
+    }
+
+    @media (max-width: 560px) {
+      header h1 { font-size: 1.7rem; }
+      .form-row { flex-direction: column; }
+      .form-row input { min-width: unset; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>MTG Keyword Scanner</h1>
+    <p>Enter a Moxfield deck URL to see every keyword ability used — with explanations.</p>
+  </header>
+
+  <div class="panel">
+    <form class="form-row" id="deckForm">
+      <input
+        id="deckUrl"
+        type="text"
+        placeholder="https://moxfield.com/decks/..."
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button class="btn" type="submit" id="submitBtn">Scan Keywords</button>
+    </form>
+  </div>
+
+  <div id="statusArea"></div>
+  <div id="resultsArea"></div>
+
+</div>
+
+<script>
+/* ────────────────────────────────────────────────────────────────
+   KEYWORD DICTIONARY  (ability name → rules explanation)
+──────────────────────────────────────────────────────────────── */
+const KW = {
+  "Affinity":        "This spell costs {1} less to cast for each artifact (or other specified permanent type) you control.",
+  "Afflict":         "Whenever this creature becomes blocked, the defending player loses N life.",
+  "Aftermath":       "Cast this half only from your graveyard. Then exile it.",
+  "Amass":           "Put N +1/+1 counters on an Army token you control, creating one first if needed.",
+  "Annihilator":     "Whenever this creature attacks, the defending player sacrifices N permanents.",
+  "Ascend":          "If you control 10 or more permanents, you get the city's blessing for the rest of the game.",
+  "Awaken":          "If you pay the awaken cost, put N +1/+1 counters on target land you control — it becomes a 0/0 Elemental creature in addition to its other types until end of turn.",
+  "Banding":         "Creatures with banding can attack in a band. You choose how blockers assign damage to banded creatures; blocked banding creatures deal their damage as the attacking player chooses.",
+  "Battle Cry":      "Whenever this creature attacks, each other attacking creature gets +1/+0 until end of turn.",
+  "Bestow":          "If you cast this card for its bestow cost, it's an Aura with enchant creature. It becomes a creature again if it's not attached to one.",
+  "Bloodrush":       "Discard this card: Give target attacking creature a power/toughness bonus until end of turn.",
+  "Bloodthirst":     "If an opponent was dealt damage this turn, this creature enters the battlefield with N +1/+1 counters.",
+  "Bushido":         "Whenever this creature blocks or becomes blocked, it gets +N/+N until end of turn.",
+  "Buyback":         "You may pay an additional buyback cost. If you do, put this spell into your hand as it resolves instead of the graveyard.",
+  "Cascade":         "When you cast this spell, exile cards from the top of your library until you exile a nonland card whose mana value is less. You may cast it for free. Put all exiled cards on the bottom in a random order.",
+  "Champion":        "When this enters, sacrifice it unless you exile another creature of the specified type you control. When this leaves the battlefield, that exiled creature returns.",
+  "Changeling":      "This card is every creature type at all times.",
+  "Cipher":          "Exile this spell encoded on a creature you control. Whenever that creature deals combat damage to a player, you may cast a copy of this spell for free.",
+  "Cohort":          "Tap this creature and a tapped Ally you control: [effect].",
+  "Companion":       "If this card is your chosen companion, you may put it into your hand once per game by paying {3}.",
+  "Constellation":   "Whenever this enchantment or another enchantment enters the battlefield under your control, [effect].",
+  "Convoke":         "Each creature you tap while casting this spell pays for {1} or one mana of that creature's color.",
+  "Crew":            "Tap any number of creatures you control with total power N or more: This Vehicle becomes an artifact creature until end of turn.",
+  "Cumulative Upkeep": "At the beginning of your upkeep, put an age counter on this permanent, then sacrifice it unless you pay its upkeep cost for each age counter on it.",
+  "Cycling":         "Pay the cycling cost and discard this card: Draw a card.",
+  "Dash":            "You may cast this for its dash cost. If you do, it gains haste and is returned to its owner's hand at the beginning of the next end step.",
+  "Daybound":        "If a player cast no spells during their own turn, it becomes night next turn. This creature transforms into its nightbound face when it's night.",
+  "Nightbound":      "This creature transforms into its daybound face when it's day. See Daybound.",
+  "Deathtouch":      "Any amount of damage this creature deals to a creature is enough to destroy it.",
+  "Defender":        "This creature can't attack.",
+  "Delve":           "Each card you exile from your graveyard while casting this spell pays for {1}.",
+  "Devoid":          "This card has no color.",
+  "Devour":          "As this creature enters, you may sacrifice any number of creatures. This creature enters with N times that many +1/+1 counters.",
+  "Double Strike":   "This creature deals both first-strike damage and regular combat damage.",
+  "Dredge":          "If you would draw a card, you may instead mill N cards and return this card from your graveyard to your hand.",
+  "Echo":            "At the beginning of your upkeep, if this permanent came under your control since your last upkeep, sacrifice it unless you pay its echo cost.",
+  "Embalm":          "Pay the embalm cost, exile this card from your graveyard: Create a token that's a copy of it, except it's white, has no mana cost, and is a Zombie in addition to its other types.",
+  "Emerge":          "You may cast this by sacrificing a creature and paying the emerge cost reduced by that creature's mana value.",
+  "Entwine":         "Choose all modes. Pay the entwine cost in addition to all other costs.",
+  "Equip":           "Attach to target creature you control. Equip only as a sorcery.",
+  "Escalate":        "Pay the escalate cost for each mode chosen beyond the first.",
+  "Escape":          "You may cast this card from your graveyard by paying its escape cost and exiling N other cards from your graveyard.",
+  "Eternalize":      "Pay the eternalize cost, exile this card from your graveyard: Create a 4/4 black Zombie token that's a copy of it with no mana cost.",
+  "Evolve":          "Whenever a creature with greater power or toughness enters the battlefield under your control, put a +1/+1 counter on this creature.",
+  "Exert":           "You may exert this creature as it attacks. If you do, it doesn't untap during your next untap step, but it gains a bonus.",
+  "Exploit":         "When this creature enters the battlefield, you may sacrifice a creature.",
+  "Extort":          "Whenever you cast a spell, you may pay {W/B}. If you do, each opponent loses 1 life and you gain that much life.",
+  "Fabricate":       "When this creature enters the battlefield, put N +1/+1 counters on it OR create N 1/1 colorless Servo artifact creature tokens.",
+  "Fading":          "This permanent enters with N fade counters. At the beginning of your upkeep, remove a fade counter. If you can't, sacrifice it.",
+  "Fear":            "This creature can't be blocked except by artifact creatures and/or black creatures.",
+  "Ferocious":       "This effect applies or gains a bonus if you control a creature with power 4 or greater.",
+  "First Strike":    "This creature deals its combat damage before creatures without first or double strike.",
+  "Flash":           "You may cast this spell any time you could cast an instant.",
+  "Flashback":       "You may cast this card from your graveyard for its flashback cost. Then exile it.",
+  "Flying":          "This creature can only be blocked by creatures with flying or reach.",
+  "Forecast":        "Activate this ability only during your upkeep and only once each turn.",
+  "Forestwalk":      "This creature can't be blocked as long as the defending player controls a Forest.",
+  "Fortify":         "Attach to target land you control. Fortify only as a sorcery.",
+  "Fuse":            "You may cast one or both halves of this split card from your hand.",
+  "Gravestorm":      "When you cast this spell, copy it for each permanent that was put into a graveyard from the battlefield this turn.",
+  "Graft":           "This creature enters with N +1/+1 counters. When another creature enters the battlefield without counters, you may move a counter from this creature to it.",
+  "Haste":           "This creature can attack and use tap abilities the turn it enters the battlefield.",
+  "Haunt":           "When this card goes to the graveyard, exile it haunting target creature. When that creature dies, you may trigger this card's effect.",
+  "Hellbent":        "If you have no cards in hand, [additional effect].",
+  "Hexproof":        "This permanent can't be the target of spells or abilities your opponents control.",
+  "Hideaway":        "When this permanent enters, look at the top N cards of your library, exile one face down, and put the rest on the bottom in any order.",
+  "Horsemanship":    "This creature can't be blocked except by creatures with horsemanship.",
+  "Imprint":         "When this enters the battlefield, exile a target card. This permanent's other abilities reference the imprinted card.",
+  "Improvise":       "Each artifact you tap while casting this spell pays for {1}.",
+  "Indestructible":  "'Destroy' effects don't destroy this permanent. It can't be destroyed by damage.",
+  "Infect":          "This creature deals damage to creatures in the form of -1/-1 counters and to players in the form of poison counters (10 poison counters = you lose).",
+  "Ingest":          "Whenever this creature deals combat damage to a player, that player exiles the top card of their library.",
+  "Inspired":        "Whenever this creature becomes untapped, [effect].",
+  "Intimidate":      "This creature can't be blocked except by artifact creatures and/or creatures that share a color with it.",
+  "Islandwalk":      "This creature can't be blocked as long as the defending player controls an Island.",
+  "Jump-start":      "You may cast this card from your graveyard by discarding a card in addition to paying its other costs. Then exile it.",
+  "Kicker":          "You may pay an additional kicker cost as you cast this spell. If you do, the spell gains an additional effect.",
+  "Landfall":        "Whenever a land enters the battlefield under your control, [effect].",
+  "Lifelink":        "Damage dealt by this creature also causes you to gain that much life.",
+  "Living Weapon":   "When this Equipment enters the battlefield, create a 0/0 black Germ creature token, then attach this Equipment to it.",
+  "Madness":         "If you discard this card, discard it into exile. When you do, you may cast it for its madness cost, or put it into your graveyard.",
+  "Melee":           "Whenever this creature attacks, it gets +1/+1 until end of turn for each opponent you attacked this turn.",
+  "Meld":            "If you control both halves of this meld pair, exile them and combine them face up into the meld card on the battlefield.",
+  "Menace":          "This creature can't be blocked except by two or more creatures.",
+  "Mentor":          "Whenever this creature attacks, put a +1/+1 counter on target attacking creature with lesser power.",
+  "Metalcraft":      "This has an additional effect as long as you control three or more artifacts.",
+  "Miracle":         "You may cast this card for its miracle cost the moment you draw it, if it's the first card drawn this turn.",
+  "Modular":         "This artifact creature enters with N +1/+1 counters. When it dies, you may put its +1/+1 counters on target artifact creature.",
+  "Monstrosity":     "If this creature isn't monstrous, put N +1/+1 counters on it and it becomes monstrous.",
+  "Morbid":          "This has an additional effect if a creature died this turn.",
+  "Morph":           "You may cast this card face down as a 2/2 creature for {3}. Turn it face up any time for its morph cost.",
+  "Megamorph":       "Like Morph, but when you turn it face up for its megamorph cost, put a +1/+1 counter on it.",
+  "Mountainwalk":    "This creature can't be blocked as long as the defending player controls a Mountain.",
+  "Mutate":          "Cast this on a non-Human creature you own. The two cards merge; the creature on top determines power/toughness and the merged creature has all abilities.",
+  "Ninjutsu":        "Pay the ninjutsu cost, return an unblocked attacker you control to hand: Put this card from your hand onto the battlefield tapped and attacking.",
+  "Offering":        "You may cast this card any time you could cast an instant by sacrificing a specified creature and paying the difference in costs.",
+  "Outlast":         "Pay the cost, {T}: Put a +1/+1 counter on this creature. Activate only as a sorcery.",
+  "Overload":        "You may cast this spell for its overload cost. If you do, change every instance of 'target' in its text to 'each'.",
+  "Persist":         "When this creature dies, if it had no -1/-1 counters on it, return it to the battlefield with a -1/-1 counter on it.",
+  "Phasing":         "This phases in or out before you untap during your untap step. While phased out, it's treated as though it doesn't exist.",
+  "Plainswalk":      "This creature can't be blocked as long as the defending player controls a Plains.",
+  "Populate":        "Create a token that's a copy of a creature token you control.",
+  "Poisonous":       "Whenever this creature deals combat damage to a player, that player gets N poison counters (10 = loss).",
+  "Protection":      "This can't be blocked, targeted, dealt damage, enchanted, or equipped by anything with the specified quality.",
+  "Provoke":         "Whenever this creature attacks, you may have target creature the defending player controls untap and block this creature if able.",
+  "Prowess":         "Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.",
+  "Prowl":           "You may cast this for its prowl cost if you dealt combat damage to a player this turn with a creature of the specified type.",
+  "Rampage":         "Whenever this creature becomes blocked, it gets +N/+N until end of turn for each creature beyond the first that blocks it.",
+  "Raid":            "This has an additional effect if you attacked with a creature this turn.",
+  "Rally":           "Whenever another Ally enters the battlefield under your control, [effect].",
+  "Reach":           "This creature can block creatures with flying.",
+  "Rebound":         "If you cast this from your hand, exile it as it resolves. At the beginning of your next upkeep, you may cast it from exile without paying its mana cost.",
+  "Recover":         "When a creature is put into your graveyard from the battlefield, you may pay the recover cost. If you do, return this card from your graveyard to your hand.",
+  "Regenerate":      "The next time this creature would be destroyed this turn, it isn't. Instead, tap it, remove all damage from it, and remove it from combat.",
+  "Reinforce":       "Pay the cost, discard this card: Put N +1/+1 counters on target creature.",
+  "Renown":          "When this creature deals combat damage to a player, if it isn't renowned, put N +1/+1 counters on it and it becomes renowned.",
+  "Replicate":       "When you cast this spell, copy it for each time you paid the replicate cost.",
+  "Retrace":         "You may cast this card from your graveyard by discarding a land card in addition to paying its other costs.",
+  "Revolt":          "This has an additional effect if a permanent you controlled left the battlefield this turn.",
+  "Riot":            "This creature enters the battlefield with your choice of a +1/+1 counter or haste.",
+  "Ripple":          "When you cast this spell, you may reveal the top N cards of your library. You may cast all with the same name for free. Put the rest on the bottom.",
+  "Scavenge":        "Pay the cost, exile this card from your graveyard: Put +1/+1 counters equal to this card's power on target creature.",
+  "Scry":            "Look at the top N cards of your library. Put any number on the bottom in any order and the rest on top in any order.",
+  "Shadow":          "This creature can only block or be blocked by creatures with shadow.",
+  "Shroud":          "This permanent can't be the target of spells or abilities (including yours).",
+  "Skulk":           "This creature can't be blocked by creatures with greater power.",
+  "Soulbond":        "You may pair this creature with another unpaired creature when either enters. While paired, both creatures share the listed ability.",
+  "Soulshift":       "When this creature dies, return target Spirit card with lesser mana value from your graveyard to your hand.",
+  "Spectacle":       "You may cast this spell for its spectacle cost if an opponent lost life this turn.",
+  "Splice":          "Reveal this card from your hand and pay its splice cost to add its effects onto a spell of the specified subtype you cast.",
+  "Split Second":    "As long as this spell is on the stack, players can't cast spells or activate abilities that aren't mana abilities.",
+  "Storm":           "When you cast this spell, copy it for each spell cast before it this turn. You may choose new targets for copies.",
+  "Strive":          "This spell costs more to cast for each additional target beyond the first.",
+  "Support":         "Put a +1/+1 counter on each of up to N other target creatures.",
+  "Sunburst":        "This enters the battlefield with a +1/+1 or charge counter for each color of mana spent to cast it.",
+  "Surge":           "You may cast this for its surge cost if you or a teammate cast another spell this turn.",
+  "Surveil":         "Look at the top N cards of your library. Put any number into your graveyard and the rest on top in any order.",
+  "Suspend":         "Pay the suspend cost, exile this with N time counters. At the start of each upkeep, remove a counter. Cast it for free when the last counter is removed; it gains haste.",
+  "Swampwalk":       "This creature can't be blocked as long as the defending player controls a Swamp.",
+  "Threshold":       "This has an additional effect as long as seven or more cards are in your graveyard.",
+  "Training":        "Whenever this creature attacks with another creature with greater power, put a +1/+1 counter on this creature.",
+  "Trample":         "If this creature would assign enough damage to its blockers, it assigns the rest to the defending player or planeswalker.",
+  "Transfigure":     "Pay the cost, sacrifice this creature: Search your library for a creature with the same mana value, put it onto the battlefield, then shuffle.",
+  "Transmute":       "Pay the cost, discard this card: Search your library for a card with the same mana value, reveal it, put it into your hand, then shuffle.",
+  "Tribute":         "As this creature enters, an opponent may put N +1/+1 counters on it. If they don't, an additional effect occurs.",
+  "Undying":         "When this creature dies, if it had no +1/+1 counters on it, return it to the battlefield with a +1/+1 counter on it.",
+  "Unearth":         "Pay the unearth cost, exile this from your graveyard: Return it to the battlefield. It gains haste. Exile it at end of turn or if it would leave.",
+  "Unleash":         "You may have this creature enter the battlefield with a +1/+1 counter. It can't block if it has a +1/+1 counter on it.",
+  "Vanishing":       "This permanent enters with N time counters. At the beginning of your upkeep, remove a time counter. When the last is removed, sacrifice it.",
+  "Vigilance":       "Attacking doesn't cause this creature to tap.",
+  "Ward":            "Whenever this permanent becomes the target of a spell or ability an opponent controls, counter it unless that player pays the ward cost.",
+  "Wither":          "This permanent deals damage to creatures in the form of -1/-1 counters instead of regular damage.",
+};
+
+/* ────────────────────────────────────────────────────────────────
+   HELPERS
+──────────────────────────────────────────────────────────────── */
+const CORS_PROXY = 'https://corsproxy.io/?url=';
+
+function h(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function extractDeckId(url) {
+  const m = url.match(/moxfield\.com\/decks\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+function findExplanation(keyword) {
+  if (KW[keyword]) return KW[keyword];
+  const lower = keyword.toLowerCase();
+  for (const [k, v] of Object.entries(KW))
+    if (k.toLowerCase() === lower) return v;
+  // Strip trailing number/cost e.g. "Ward 2" → "Ward"
+  const base = keyword.replace(/\s+[\w{}/]+$/, '').trim();
+  if (base && base !== keyword) return findExplanation(base);
+  return null;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   API CALLS
+──────────────────────────────────────────────────────────────── */
+async function fetchMoxfieldDeck(deckId) {
+  const apiUrl = `https://api2.moxfield.com/v2/decks/all/${deckId}`;
+  const res = await fetch(CORS_PROXY + encodeURIComponent(apiUrl));
+  if (!res.ok) {
+    if (res.status === 404) throw new Error('Deck not found. Check the URL or make sure the deck is public.');
+    throw new Error(`Moxfield returned HTTP ${res.status}.`);
+  }
+  return res.json();
+}
+
+function extractCardNames(deck) {
+  const names = new Set();
+  for (const board of ['commanders', 'mainboard', 'sideboard']) {
+    const b = deck.boards?.[board];
+    if (!b) continue;
+    for (const entry of Object.values(b.cards || {}))
+      if (entry.card?.name) names.add(entry.card.name);
+  }
+  return [...names];
+}
+
+async function fetchScryfallCards(names) {
+  const cards = [];
+  const SIZE = 75;
+  for (let i = 0; i < names.length; i += SIZE) {
+    const batch = names.slice(i, i + SIZE);
+    const res = await fetch('https://api.scryfall.com/cards/collection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifiers: batch.map(n => ({ name: n })) }),
+    });
+    if (!res.ok) throw new Error(`Scryfall returned HTTP ${res.status}.`);
+    const data = await res.json();
+    cards.push(...(data.data || []));
+    if (i + SIZE < names.length) await sleep(100);
+  }
+  return cards;
+}
+
+function collectKeywords(cards) {
+  const map = new Map();
+  for (const card of cards) {
+    const kws = new Set([...(card.keywords || [])]);
+    if (card.card_faces)
+      for (const f of card.card_faces)
+        for (const k of (f.keywords || [])) kws.add(k);
+
+    for (const kw of kws) {
+      if (!map.has(kw)) map.set(kw, { cardNames: new Set(), explanation: findExplanation(kw) });
+      map.get(kw).cardNames.add(card.name);
+    }
+  }
+  return map;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   RENDER
+──────────────────────────────────────────────────────────────── */
+function renderResults(deck, kwMap) {
+  const area = document.getElementById('resultsArea');
+  if (kwMap.size === 0) {
+    area.innerHTML = `<div class="panel"><div class="empty-msg">No keyword abilities found in this deck.</div></div>`;
+    return;
+  }
+
+  const sorted = [...kwMap.entries()].sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
+
+  const deckName = h(deck.name || 'Deck');
+  const kwCount  = kwMap.size;
+  const totalCards = Object.values(deck.boards || {})
+    .reduce((n, b) => n + (b.count || 0), 0);
+
+  let rows = '';
+  for (const [kw, { cardNames, explanation }] of sorted) {
+    const n = cardNames.size;
+    const pills = [...cardNames].sort().map(c => `<span class="card-pill">${h(c)}</span>`).join('');
+    const desc = explanation
+      ? `<div class="kw-desc">${h(explanation)}</div>`
+      : `<div class="kw-desc unknown">No explanation available — see the <a href="https://magic.wizards.com/en/rules" target="_blank" rel="noopener">MTG Comprehensive Rules</a>.</div>`;
+
+    rows += `
+    <div class="kw-item">
+      <div class="kw-header">
+        <span class="kw-name">${h(kw)}</span>
+        <span class="kw-count">${n} card${n !== 1 ? 's' : ''}</span>
+      </div>
+      ${desc}
+      <details class="kw-cards">
+        <summary>Show cards with ${h(kw)}</summary>
+        <div class="card-pills">${pills}</div>
+      </details>
+    </div>`;
+  }
+
+  area.innerHTML = `
+  <div class="panel">
+    <div class="deck-meta">
+      <span class="deck-name">${deckName}</span>
+      <span class="badge">${totalCards} cards</span>
+      <span class="badge">${kwCount} keyword${kwCount !== 1 ? 's' : ''}</span>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="section-title">Keywords — sorted by frequency</div>
+    <div class="kw-list">${rows}</div>
+  </div>`;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   FORM HANDLER
+──────────────────────────────────────────────────────────────── */
+document.getElementById('deckForm').addEventListener('submit', async e => {
+  e.preventDefault();
+
+  const url    = document.getElementById('deckUrl').value.trim();
+  const btn    = document.getElementById('submitBtn');
+  const status = document.getElementById('statusArea');
+  const results= document.getElementById('resultsArea');
+
+  results.innerHTML = '';
+
+  const deckId = extractDeckId(url);
+  if (!deckId) {
+    status.innerHTML = `<div class="error-box">Please enter a valid Moxfield deck URL — it should start with <strong>https://moxfield.com/decks/</strong></div>`;
+    return;
+  }
+
+  btn.disabled = true;
+  status.innerHTML = `<div class="panel"><div class="status"><span class="spinner"></span>Fetching deck from Moxfield&hellip;</div></div>`;
+
+  try {
+    const deck  = await fetchMoxfieldDeck(deckId);
+    const names = extractCardNames(deck);
+
+    if (names.length === 0) throw new Error('No cards found in this deck.');
+
+    status.innerHTML = `<div class="panel"><div class="status"><span class="spinner"></span>Found ${names.length} unique card${names.length !== 1 ? 's' : ''} — fetching keyword data from Scryfall&hellip;</div></div>`;
+
+    const cards   = await fetchScryfallCards(names);
+    const kwMap   = collectKeywords(cards);
+
+    status.innerHTML = '';
+    renderResults(deck, kwMap);
+  } catch (err) {
+    status.innerHTML = `<div class="error-box">${h(err.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
