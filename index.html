@@ -326,6 +326,55 @@
     /* ── Mana icons ─────────────────────────────────────────────── */
     .ms.ms-cost { font-size: .9em; vertical-align: -.1em; }
 
+    /* ── Filter bar ─────────────────────────────────────────────── */
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .3rem .65rem;
+    }
+    .filter-label {
+      font-size: .78rem;
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-right: .15rem;
+    }
+    .filter-bar label {
+      display: flex;
+      align-items: center;
+      gap: .3rem;
+      font-size: .8rem;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .filter-bar label:hover { color: var(--text); }
+    .filter-bar input[type=checkbox] { accent-color: var(--gold); cursor: pointer; }
+    [data-section].hidden { display: none !important; }
+
+    /* ── Card Rulings ───────────────────────────────────────────── */
+    .rulings-body {
+      margin-top: .65rem;
+      padding-top: .65rem;
+      border-top: 1px solid var(--border);
+      font-size: .87rem;
+      line-height: 1.65;
+    }
+    .ruling {
+      display: grid;
+      grid-template-columns: 5.5rem 1fr;
+      gap: .5rem;
+      padding: .3rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .ruling:last-child { border-bottom: none; }
+    .ruling-date { color: #4a4f66; font-size: .76rem; padding-top: .12rem; }
+    .ruling-text { color: var(--muted); }
+    .ruling-empty { color: #4a4f66; font-style: italic; }
+
     @media (max-width: 560px) {
       header h1 { font-size: 1.7rem; }
       .dl-row { margin-left: 0; }
@@ -833,7 +882,7 @@ function renderResults(totalUnique, kwMap, cards) {
         </details>`;
       }).join('');
     typeSections += `
-  <div class="panel">
+  <div class="panel" data-section="triggered">
     <div class="section-title">${TYPE_LABELS.Triggered} <span class="ab-count">${totalTrig}</span></div>
     <div class="ab-desc">${TYPE_DESC.Triggered}</div>
     <div class="ca-list">${rows}</div>
@@ -861,7 +910,7 @@ function renderResults(totalUnique, kwMap, cards) {
       </details>`;
     }).join('');
     typeSections += `
-  <div class="panel">
+  <div class="panel" data-section="activated">
     <div class="section-title">${TYPE_LABELS.Activated} <span class="ab-count">${abilityMap.size}</span></div>
     <div class="ab-desc">${TYPE_DESC.Activated}</div>
     <div class="ca-list">${rows}</div>
@@ -882,12 +931,37 @@ function renderResults(totalUnique, kwMap, cards) {
       <div class="ca-oracle">${lines.map(l => hm(l)).join('\n')}</div>
     </details>`).join('');
     typeSections += `
-  <div class="panel">
+  <div class="panel" data-section="${type.toLowerCase()}">
     <div class="section-title">${TYPE_LABELS[type]} <span class="ab-count">${entries.length}</span></div>
     <div class="ab-desc">${TYPE_DESC[type]}</div>
     <div class="ca-list">${rows}</div>
   </div>`;
   }
+
+  // ── Card Rulings (lazy-loaded per card) ──────────────────────
+  const rulingRows = abilityCards.map(card => `
+    <details class="ca-item" data-rulings-card data-rulings-uri="${h(card.rulings_uri || '')}">
+      <summary>
+        <span class="ca-name">${h(card.name)}</span>
+        <span class="ca-type">${h(card.type_line || '')}</span>
+      </summary>
+      <div class="rulings-body">Click to load rulings…</div>
+    </details>`).join('');
+
+  // ── Filter bar ───────────────────────────────────────────────
+  const filterDefs = [
+    { key: 'keywords',  label: 'Keywords',  show: true },
+    { key: 'triggered', label: 'Triggered', show: groups.Triggered.length > 0 },
+    { key: 'activated', label: 'Activated', show: groups.Activated.length > 0 },
+    { key: 'static',    label: 'Static',    show: groups.Static.length > 0 },
+    { key: 'loyalty',   label: 'Loyalty',   show: groups.Loyalty.length > 0 },
+    { key: 'spell',     label: 'Spell',     show: groups.Spell.length > 0 },
+    { key: 'rulings',   label: 'Rulings',   show: abilityCards.length > 0 },
+  ];
+  const filterBarHtml = filterDefs
+    .filter(d => d.show)
+    .map(d => `<label><input type="checkbox" class="section-toggle" value="${d.key}" checked> ${d.label}</label>`)
+    .join('');
 
   // Store for download functions
   _results = { totalUnique, kwMap, cards, groups, TYPE_ORDER, TYPE_LABELS };
@@ -903,11 +977,62 @@ function renderResults(totalUnique, kwMap, cards) {
       </div>
     </div>
   </div>
-  <div class="panel">
+  <div class="panel filter-bar">
+    <span class="filter-label">Show:</span>${filterBarHtml}
+  </div>
+  <div class="panel" data-section="keywords">
     <div class="section-title">Keywords — sorted by frequency</div>
     <div class="kw-list">${kwRows}</div>
   </div>
-  ${typeSections}`;
+  ${typeSections}
+  <div class="panel" data-section="rulings">
+    <div class="section-title">Card Rulings <span class="ab-count">${abilityCards.length}</span></div>
+    <div class="ab-desc">Official WotC rulings — expand a card to load on demand</div>
+    <div class="ca-list">${rulingRows}</div>
+  </div>`;
+
+  attachResultListeners();
+}
+
+function attachResultListeners() {
+  // Section visibility toggles
+  document.querySelectorAll('.section-toggle').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const panel = document.querySelector(`[data-section="${cb.value}"]`);
+      if (panel) panel.classList.toggle('hidden', !cb.checked);
+    });
+  });
+
+  // Lazy-load WotC rulings when a card's <details> is first opened
+  document.querySelectorAll('[data-rulings-card]').forEach(details => {
+    let loaded = false;
+    details.addEventListener('toggle', async () => {
+      if (!details.open || loaded) return;
+      loaded = true;
+      const body = details.querySelector('.rulings-body');
+      if (!body) return;
+      const uri = details.dataset.rulingsUri;
+      if (!uri) { body.textContent = 'No rulings URI for this card.'; return; }
+      body.textContent = 'Loading…';
+      try {
+        const res = await fetch(uri);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const rulings = (data.data || []).filter(r => r.source === 'wotc');
+        if (!rulings.length) {
+          body.innerHTML = '<span class="ruling-empty">No official rulings for this card.</span>';
+        } else {
+          body.innerHTML = rulings.map(r => `
+            <div class="ruling">
+              <span class="ruling-date">${h(r.published_at)}</span>
+              <span class="ruling-text">${hm(r.comment)}</span>
+            </div>`).join('');
+        }
+      } catch (err) {
+        body.textContent = `Failed to load rulings (${err.message}).`;
+      }
+    });
+  });
 }
 
 /* ────────────────────────────────────────────────────────────────
