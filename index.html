@@ -434,7 +434,12 @@ const PROXIES = [
       const w = await r.json();
       if (w.status?.http_code === 404) throw new Error('DECK_NOT_FOUND');
       if (!w.contents) throw new Error('EMPTY');
-      return JSON.parse(w.contents);
+      try {
+        return JSON.parse(w.contents);
+      } catch {
+        // Response may be truncated — extract card names via regex from partial JSON
+        return extractFromTruncated(w.contents);
+      }
     },
   },
   {
@@ -488,15 +493,43 @@ async function fetchMoxfieldDeck(deckId) {
   }
 }
 
+// Moxfield v2 API structure:
+//   deck.main         = commander card object
+//   deck.mainboard    = { "Card Name": { quantity, boardType, card: {...} }, ... }
+//   deck.sideboard    = same shape
+//   deck.commanders   = same shape (rarely present separately)
 function extractCardNames(deck) {
   const names = new Set();
-  for (const board of ['commanders', 'mainboard', 'sideboard']) {
-    const b = deck.boards?.[board];
-    if (!b) continue;
-    for (const entry of Object.values(b.cards || {}))
-      if (entry.card?.name) names.add(entry.card.name);
+  if (deck.main?.name) names.add(deck.main.name);
+  for (const board of ['mainboard', 'sideboard', 'commanders']) {
+    const b = deck[board];
+    if (!b || typeof b !== 'object') continue;
+    for (const entry of Object.values(b))
+      if (entry?.card?.name) names.add(entry.card.name);
   }
   return [...names];
+}
+
+// Fallback: extract card names from a truncated JSON string via regex
+function extractFromTruncated(raw) {
+  const deckNameMatch = raw.match(/"name":"([^"]+)"/);
+  const deckName = deckNameMatch ? deckNameMatch[1] : 'Deck';
+
+  // Board entries look like: "Card Name":{"quantity":1,"boardType":"mainboard"
+  const pattern = /"([^"]+)":\{"quantity":\d+,"boardType":"/g;
+  const mainboard = {};
+  let m;
+  while ((m = pattern.exec(raw)) !== null)
+    mainboard[m[1]] = { card: { name: m[1] } };
+
+  // Also grab commander from the "main" block
+  const mainMatch = raw.match(/"main":\{[^}]{0,300}"name":"([^"]+)"/);
+  if (mainMatch) mainboard[mainMatch[1]] = { card: { name: mainMatch[1] } };
+
+  if (Object.keys(mainboard).length === 0)
+    throw new Error('TRUNCATED');
+
+  return { name: deckName, mainboard };
 }
 
 async function fetchScryfallCards(names) {
