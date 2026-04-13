@@ -368,6 +368,7 @@
     .filter-bar label:hover { color: var(--text); }
     .filter-bar input[type=checkbox] { accent-color: var(--gold); cursor: pointer; }
     [data-section].hidden { display: none !important; }
+    .kw-item.hidden, .ca-item.hidden, .token-item.hidden { display: none !important; }
 
     /* ── Card Rulings ───────────────────────────────────────────── */
     .rulings-body {
@@ -393,6 +394,133 @@
       header h1 { font-size: 1.7rem; }
       .dl-row { margin-left: 0; }
     }
+
+    /* ── Card image preview ─────────────────────────────────────── */
+    #card-preview {
+      position: fixed;
+      z-index: 1000;
+      pointer-events: none;
+      display: none;
+      filter: drop-shadow(0 8px 28px rgba(0,0,0,.85));
+    }
+    #card-preview img { width: 200px; border-radius: 11px; display: block; }
+
+    /* ── Missing cards warning ──────────────────────────────────── */
+    .warn-box {
+      background: rgba(201,168,76,.06);
+      border: 1px solid rgba(201,168,76,.22);
+      border-radius: var(--radius);
+      color: var(--gold-dim);
+      padding: .75rem 1.1rem;
+      font-size: .88rem;
+      margin-bottom: 1.25rem;
+    }
+    .warn-box strong { color: var(--gold); }
+
+    /* ── Deck stats panel ───────────────────────────────────────── */
+    .stats-grid { display: flex; flex-wrap: wrap; gap: 1.4rem; }
+    .stats-block { min-width: 0; }
+    .stats-label {
+      font-size: .72rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: .5rem;
+    }
+    .type-chips { display: flex; flex-wrap: wrap; gap: .3rem; }
+    .type-chip {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: .18rem .55rem;
+      font-size: .78rem;
+    }
+    .type-chip strong { color: var(--text); margin-right: .2rem; }
+    .type-chip span { color: var(--muted); }
+
+    /* ── Mana curve chart ───────────────────────────────────────── */
+    .curve-chart {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      height: 56px;
+      margin-bottom: 3px;
+    }
+    .curve-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      height: 100%;
+    }
+    .curve-bar {
+      width: 100%;
+      background: var(--gold-dim);
+      border-radius: 2px 2px 0 0;
+      min-height: 2px;
+      cursor: default;
+      transition: background .12s;
+    }
+    .curve-bar:hover { background: var(--gold); }
+    .curve-cmc-labels { display: flex; gap: 4px; }
+    .curve-cmc-label { flex: 1; text-align: center; font-size: .62rem; color: #4a4f66; }
+
+    /* ── Color identity ─────────────────────────────────────────── */
+    .color-ci { display: flex; gap: .35rem; align-items: center; font-size: 1.2em; }
+    .color-ci-none { color: #4a4f66; font-size: .82rem; }
+
+    /* ── Token glossary ─────────────────────────────────────────── */
+    .token-list { display: flex; flex-direction: column; gap: .4rem; }
+    .token-item {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .55rem .9rem;
+    }
+    .token-desc { font-size: .86rem; color: var(--text); }
+    .token-sources { font-size: .76rem; color: var(--muted); margin-top: .18rem; }
+
+    /* ── Search input ───────────────────────────────────────────── */
+    .search-input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: .82rem;
+      padding: .28rem .65rem;
+      outline: none;
+      width: 148px;
+      margin-left: auto;
+      transition: border-color .15s, width .2s;
+    }
+    .search-input:focus { border-color: var(--gold); width: 210px; }
+    .search-input::placeholder { color: #4a4f66; }
+
+    /* ── Card link / pill overrides ─────────────────────────────── */
+    a.card-pill { text-decoration: none; }
+    a.card-pill:hover { border-color: var(--gold-dim); color: var(--gold); }
+    a.trig-card-name {
+      text-decoration: none;
+      color: var(--gold);
+      font-weight: 600;
+      margin-right: .35rem;
+    }
+    a.trig-card-name::after { content: ':'; }
+    a.trig-card-name:hover { text-decoration: underline; }
+    .scry-ext {
+      font-size: .62rem;
+      color: #3a3f55;
+      text-decoration: none;
+      margin-left: .25rem;
+      vertical-align: .12em;
+      opacity: 0;
+      transition: opacity .1s, color .1s;
+    }
+    details.ca-item:hover .scry-ext,
+    .kw-item:hover .scry-ext { opacity: 1; }
+    .scry-ext:hover { color: var(--gold) !important; opacity: 1; }
   </style>
 </head>
 <body>
@@ -422,6 +550,8 @@
   <div id="resultsArea"></div>
 
 </div>
+
+<div id="card-preview"><img id="card-preview-img" alt=""></div>
 
 <script>
 /* ────────────────────────────────────────────────────────────────
@@ -745,6 +875,7 @@ function parseDeckText(text) {
 ──────────────────────────────────────────────────────────────── */
 async function fetchScryfallCards(names) {
   const cards = [];
+  const notFound = [];
   const SIZE = 75;
   for (let i = 0; i < names.length; i += SIZE) {
     const batch = names.slice(i, i + SIZE);
@@ -756,9 +887,10 @@ async function fetchScryfallCards(names) {
     if (!res.ok) throw new Error(`Scryfall returned HTTP ${res.status}.`);
     const data = await res.json();
     cards.push(...(data.data || []));
+    notFound.push(...(data.not_found || []).map(nf => nf.name || JSON.stringify(nf)));
     if (i + SIZE < names.length) await sleep(100);
   }
-  return cards;
+  return { cards, notFound };
 }
 
 // Fetches WotC rulings for all non-land cards in parallel batches.
@@ -961,9 +1093,12 @@ function getCardOracle(card) {
   return '';
 }
 
-function renderResults(totalUnique, kwMap, cards, rulings) {
+function renderResults(totalUnique, kwMap, cards, rulings, notFound = []) {
   const area = document.getElementById('resultsArea');
   const kwCount = kwMap.size;
+
+  // Build name→card lookup used by link/image helpers
+  _cardMap = new Map(cards.map(c => [c.name, c]));
 
   // ── Keyword section ──────────────────────────────────────────
   let kwRows = '';
@@ -973,7 +1108,7 @@ function renderResults(totalUnique, kwMap, cards, rulings) {
     const sorted = [...kwMap.entries()].sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
     for (const [kw, { cardNames, explanation }] of sorted) {
       const n = cardNames.size;
-      const pills = [...cardNames].sort().map(c => `<span class="card-pill">${h(c)}</span>`).join('');
+      const pills = [...cardNames].sort().map(c => makeCardLink(c)).join('');
       const desc = explanation
         ? `<div class="kw-desc">${h(explanation)}</div>`
         : `<div class="kw-desc unknown">No explanation available — see the <a href="https://magic.wizards.com/en/rules" target="_blank" rel="noopener">MTG Comprehensive Rules</a>.</div>`;
@@ -1046,7 +1181,7 @@ function renderResults(totalUnique, kwMap, cards, rulings) {
         const items = catMap.get(cat);
         const entries = items.map(({ card, line }) => `
           <div class="trig-entry">
-            <span class="trig-card-name">${h(card.name)}</span><span class="trig-line">${hm(line)}</span>
+            ${makeCardLink(card.name, 'trig-card-name')}<span class="trig-line">${hm(line)}</span>
           </div>`).join('');
         const ruleNote = TRIG_RULES[cat]
           ? `<div class="trig-rule">${TRIG_RULES[cat]}</div>` : '';
@@ -1078,7 +1213,7 @@ function renderResults(totalUnique, kwMap, cards, rulings) {
       }
     const actSorted = [...abilityMap.entries()].sort((a, b) => b[1].size - a[1].size);
     const rows = actSorted.map(([abilityText, cardNames]) => {
-      const pills = [...cardNames].sort().map(n => `<span class="card-pill">${h(n)}</span>`).join('');
+      const pills = [...cardNames].sort().map(n => makeCardLink(n)).join('');
       return `
       <details class="ca-item">
         <summary>
@@ -1103,7 +1238,7 @@ function renderResults(totalUnique, kwMap, cards, rulings) {
     const rows = entries.map(({ card, lines }) => `
     <details class="ca-item">
       <summary>
-        <span class="ca-name">${h(card.name)}</span>
+        ${cardNameSpan(card)}
         <span class="ca-type">${h(card.type_line || '')}</span>
         <span class="ca-mana">${hm(card.mana_cost || '')}</span>
       </summary>
@@ -1124,7 +1259,7 @@ function renderResults(totalUnique, kwMap, cards, rulings) {
     return `
     <details class="ca-item">
       <summary>
-        <span class="ca-name">${h(card.name)}</span>
+        ${cardNameSpan(card)}
         <span class="ca-type">${h(card.type_line || '')}</span>
         <span class="kw-count">${cardRulings.length}</span>
       </summary>
@@ -1136,8 +1271,44 @@ function renderResults(totalUnique, kwMap, cards, rulings) {
     </details>`;
   }).join('');
 
+  // ── Deck stats ───────────────────────────────────────────────
+  const typeCounts  = buildTypeCounts(cards);
+  const curve       = buildManaCurve(cards);
+  const colorId     = buildColorIdentity(cards);
+  const tokenMap    = buildTokenGlossary(cards);
+
+  const typeOrder   = ['Creature','Planeswalker','Instant','Sorcery','Artifact','Enchantment','Battle','Land'];
+  const typeChips   = typeOrder
+    .filter(t => typeCounts[t] > 0)
+    .map(t => `<span class="type-chip"><strong>${typeCounts[t]}</strong><span>${t}${typeCounts[t] !== 1 ? 's' : ''}</span></span>`)
+    .join('');
+
+  const COLOR_CI = ['W','U','B','R','G','C'];
+  const colorChips  = COLOR_CI.filter(c => colorId.has(c))
+    .map(c => `<i class="ms ms-cost ms-${c.toLowerCase()}" title="${{W:'White',U:'Blue',B:'Black',R:'Red',G:'Green',C:'Colorless'}[c]}"></i>`)
+    .join('');
+  const colorHtml   = colorChips || '<span class="color-ci-none">Colorless</span>';
+
+  const curveKeys   = ['0','1','2','3','4','5','6','7+'];
+  const curveMax    = Math.max(...curveKeys.map(k => curve[k] || 0), 1);
+  const curveBars   = curveKeys.map(k => {
+    const n = curve[k] || 0;
+    const h = Math.max(2, Math.round((n / curveMax) * 52));
+    return `<div class="curve-col"><div class="curve-bar" style="height:${h}px" title="${n} card${n!==1?'s':''} at CMC ${k}"></div></div>`;
+  }).join('');
+  const curveLabels = curveKeys.map(k => `<div class="curve-cmc-label">${k}</div>`).join('');
+
+  // ── Token glossary ───────────────────────────────────────────
+  const tokensSorted = [...tokenMap.entries()].sort((a, b) => b[1].size - a[1].size);
+  const tokenRows = tokensSorted.map(([desc, sources]) => `
+    <div class="token-item">
+      <div class="token-desc">${hm(desc)}</div>
+      <div class="token-sources">Source${sources.size !== 1 ? 's' : ''}: ${[...sources].sort().join(', ')}</div>
+    </div>`).join('');
+
   // ── Filter bar ───────────────────────────────────────────────
   const filterDefs = [
+    { key: 'stats',     label: 'Stats',     show: true },
     { key: 'keywords',  label: 'Keywords',  show: true },
     { key: 'triggered', label: 'Triggered', show: groups.Triggered.length > 0 },
     { key: 'activated', label: 'Activated', show: groups.Activated.length > 0 },
@@ -1145,21 +1316,29 @@ function renderResults(totalUnique, kwMap, cards, rulings) {
     { key: 'loyalty',   label: 'Loyalty',   show: groups.Loyalty.length > 0 },
     { key: 'spell',     label: 'Spell',     show: groups.Spell.length > 0 },
     { key: 'rulings',   label: 'Rulings',   show: rulingCards.length > 0 },
+    { key: 'tokens',    label: 'Tokens',    show: tokenMap.size > 0 },
   ];
   const filterBarHtml = filterDefs
     .filter(d => d.show)
     .map(d => `<label><input type="checkbox" class="section-toggle" value="${d.key}" checked> ${d.label}</label>`)
     .join('');
 
+  // ── Not-found warning ────────────────────────────────────────
+  const warnHtml = notFound.length
+    ? `<div class="warn-box"><strong>${notFound.length} card${notFound.length !== 1 ? 's' : ''} not found on Scryfall:</strong> ${notFound.map(n => h(n)).join(', ')}</div>`
+    : '';
+
   // Store for download functions
-  _results = { totalUnique, kwMap, cards, groups, TYPE_ORDER, TYPE_LABELS, rulings, rulingCards };
+  _results = { totalUnique, kwMap, cards, groups, TYPE_ORDER, TYPE_LABELS, rulings, rulingCards, notFound };
 
   area.innerHTML = `
+  ${warnHtml}
   <div class="panel">
     <div class="deck-meta">
       <span class="badge">${totalUnique} unique cards scanned</span>
       <span class="badge">${kwCount} keyword${kwCount !== 1 ? 's' : ''} found</span>
       <div class="dl-row">
+        <button class="btn-dl" onclick="copyToClipboard()">⎘ Copy</button>
         <button class="btn-dl" onclick="downloadTxt()">&#8595; .txt</button>
         <button class="btn-dl" onclick="downloadPdf()">&#8595; .pdf</button>
       </div>
@@ -1167,6 +1346,24 @@ function renderResults(totalUnique, kwMap, cards, rulings) {
   </div>
   <div class="panel filter-bar">
     <span class="filter-label">Show:</span>${filterBarHtml}
+    <input type="search" class="search-input" id="abilitySearch" placeholder="Filter cards…">
+  </div>
+  <div class="panel" data-section="stats">
+    <div class="stats-grid">
+      <div class="stats-block" style="flex:2;min-width:220px">
+        <div class="stats-label">Card Types</div>
+        <div class="type-chips">${typeChips}</div>
+      </div>
+      <div class="stats-block">
+        <div class="stats-label">Color Identity</div>
+        <div class="color-ci">${colorHtml}</div>
+      </div>
+      <div class="stats-block" style="flex:2;min-width:180px">
+        <div class="stats-label">Mana Curve <span style="font-weight:normal;text-transform:none;letter-spacing:0;font-size:.9em">(non-land)</span></div>
+        <div class="curve-chart">${curveBars}</div>
+        <div class="curve-cmc-labels">${curveLabels}</div>
+      </div>
+    </div>
   </div>
   <div class="panel" data-section="keywords">
     <div class="section-title">Keywords — sorted by frequency</div>
@@ -1177,7 +1374,13 @@ function renderResults(totalUnique, kwMap, cards, rulings) {
     <div class="section-title">Card Rulings <span class="ab-count">${rulingCards.length}</span></div>
     <div class="ab-desc">Official WotC rulings for cards in this deck</div>
     <div class="ca-list">${rulingRows}</div>
-  </div>`;
+  </div>
+  ${tokenMap.size ? `
+  <div class="panel" data-section="tokens">
+    <div class="section-title">Token Glossary <span class="ab-count">${tokensSorted.length}</span></div>
+    <div class="ab-desc">Tokens this deck can create</div>
+    <div class="token-list">${tokenRows}</div>
+  </div>` : ''}`;
 
   attachResultListeners();
 }
@@ -1189,12 +1392,135 @@ function attachResultListeners() {
       if (panel) panel.classList.toggle('hidden', !cb.checked);
     });
   });
+
+  // Card image preview
+  const preview    = document.getElementById('card-preview');
+  const previewImg = document.getElementById('card-preview-img');
+  function positionPreview(e) {
+    const pw = 200, ph = 280;
+    let x = e.clientX + 16, y = e.clientY - 10;
+    if (x + pw > window.innerWidth  - 10) x = e.clientX - pw - 16;
+    if (y + ph > window.innerHeight - 10) y = window.innerHeight - ph - 10;
+    preview.style.left = x + 'px';
+    preview.style.top  = y + 'px';
+  }
+  const area = document.getElementById('resultsArea');
+  if (area && preview && previewImg) {
+    area.addEventListener('mouseover', e => {
+      const t = e.target.closest('[data-img]');
+      if (!t) return;
+      previewImg.src = t.dataset.img;
+      preview.style.display = 'block';
+      positionPreview(e);
+    });
+    area.addEventListener('mousemove', e => {
+      if (preview.style.display === 'block') positionPreview(e);
+    });
+    area.addEventListener('mouseout', e => {
+      const rt = e.relatedTarget;
+      if (!rt || !rt.closest('[data-img]')) preview.style.display = 'none';
+    });
+  }
+
+  // Search / filter bar
+  const searchInput = document.getElementById('abilitySearch');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.toLowerCase().trim();
+      document.querySelectorAll('.kw-item, .ca-item, .token-item').forEach(el => {
+        el.classList.toggle('hidden', q.length > 0 && !el.textContent.toLowerCase().includes(q));
+      });
+    });
+  }
 }
 
 /* ────────────────────────────────────────────────────────────────
    DOWNLOAD
 ──────────────────────────────────────────────────────────────── */
 let _results = null;
+let _cardMap  = null;   // Map<name, card> for image/link lookups
+
+/* ── Card link / image helpers ───────────────────────────────── */
+function getCardImage(card) {
+  if (!card) return '';
+  if (card.image_uris) return card.image_uris.normal || '';
+  if (card.card_faces && card.card_faces[0] && card.card_faces[0].image_uris)
+    return card.card_faces[0].image_uris.normal || '';
+  return '';
+}
+
+// Renders a clickable, hoverable card pill (link + image preview).
+function makeCardLink(name, cls = 'card-pill') {
+  const card = _cardMap && _cardMap.get(name);
+  const img  = card ? getCardImage(card) : '';
+  const href = card ? h(card.scryfall_uri) : `https://scryfall.com/search?q=!${encodeURIComponent('"' + name + '"')}`;
+  const di   = img ? ` data-img="${h(img)}"` : '';
+  return `<a class="${cls}" href="${href}" target="_blank" rel="noopener"${di}>${h(name)}</a>`;
+}
+
+// Returns a card name span with a faint ↗ Scryfall link (shows on hover).
+function cardNameSpan(card, extraCls = '') {
+  const img  = getCardImage(card);
+  const di   = img ? ` data-img="${h(img)}"` : '';
+  const link = card.scryfall_uri
+    ? `<a class="scry-ext" href="${h(card.scryfall_uri)}" target="_blank" rel="noopener"
+         title="Open on Scryfall" onclick="event.stopPropagation()">↗</a>`
+    : '';
+  return `<span class="ca-name${extraCls ? ' ' + extraCls : ''}"${di}>${h(card.name)}${link}</span>`;
+}
+
+/* ── Deck stats builders ─────────────────────────────────────── */
+function buildTypeCounts(cards) {
+  const c = { Land:0, Creature:0, Planeswalker:0, Instant:0, Sorcery:0, Artifact:0, Enchantment:0, Battle:0 };
+  for (const card of cards) {
+    const t = card.type_line || '';
+    if      (/\bLand\b/.test(t))         c.Land++;
+    else if (/\bCreature\b/.test(t))     c.Creature++;
+    else if (/\bPlaneswalker\b/.test(t)) c.Planeswalker++;
+    else if (/\bBattle\b/.test(t))       c.Battle++;
+    else if (/\bInstant\b/.test(t))      c.Instant++;
+    else if (/\bSorcery\b/.test(t))      c.Sorcery++;
+    else if (/\bArtifact\b/.test(t))     c.Artifact++;
+    else if (/\bEnchantment\b/.test(t))  c.Enchantment++;
+  }
+  return c;
+}
+
+function buildManaCurve(cards) {
+  const curve = {'0':0,'1':0,'2':0,'3':0,'4':0,'5':0,'6':0,'7+':0};
+  for (const card of cards) {
+    if (/\bLand\b/.test(card.type_line || '')) continue;
+    const cmc = Math.floor(card.cmc || 0);
+    cmc <= 6 ? curve[String(cmc)]++ : curve['7+']++;
+  }
+  return curve;
+}
+
+function buildColorIdentity(cards) {
+  const ci = new Set();
+  for (const card of cards) (card.color_identity || []).forEach(c => ci.add(c));
+  return ci;
+}
+
+function buildTokenGlossary(cards) {
+  const map = new Map(); // full sentence → Set<card name>
+  for (const card of cards) {
+    const texts = [];
+    if (card.oracle_text) texts.push(card.oracle_text);
+    if (card.card_faces) card.card_faces.forEach(f => f.oracle_text && texts.push(f.oracle_text));
+    for (const text of texts) {
+      const re = /[Cc]reate[^.!?\n]*?token[^.!?\n]*/g;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        let desc = m[0].replace(/\s+/g, ' ').trim();
+        desc = desc.charAt(0).toUpperCase() + desc.slice(1);
+        if (!map.has(desc)) map.set(desc, new Set());
+        map.get(desc).add(card.name);
+      }
+    }
+  }
+  return map;
+}
 
 function getChecked() {
   return new Set([...document.querySelectorAll('.section-toggle:checked')].map(cb => cb.value));
@@ -1321,6 +1647,17 @@ function downloadPdf() {
   win.document.close();
 }
 
+function copyToClipboard() {
+  if (!_results) return;
+  const text = buildTxtContent(_results, getChecked());
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('[onclick="copyToClipboard()"]');
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = orig; }, 1600);
+  }).catch(() => {/* silent fail on denied permission */});
+}
+
 /* ────────────────────────────────────────────────────────────────
    FORM HANDLER
 ──────────────────────────────────────────────────────────────── */
@@ -1344,12 +1681,12 @@ document.getElementById('deckForm').addEventListener('submit', async e => {
   status.innerHTML = `<div class="panel"><div class="status"><span class="spinner"></span>Found ${names.length} unique card${names.length !== 1 ? 's' : ''} — fetching keyword data from Scryfall&hellip;</div></div>`;
 
   try {
-    const cards = await fetchScryfallCards(names);
+    const { cards, notFound } = await fetchScryfallCards(names);
     const kwMap = collectKeywords(cards);
     status.innerHTML = `<div class="panel"><div class="status"><span class="spinner"></span>Loading card rulings…</div></div>`;
     const rulings = await fetchAllRulings(cards);
     status.innerHTML = '';
-    renderResults(names.length, kwMap, cards, rulings);
+    renderResults(names.length, kwMap, cards, rulings, notFound);
   } catch (err) {
     status.innerHTML = `<div class="error-box">${h(err.message)}</div>`;
   } finally {
