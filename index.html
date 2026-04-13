@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MTG Keyword Scanner</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mana-font@latest/css/mana.min.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -301,6 +302,30 @@
     }
     .ab-desc em { font-style: normal; color: var(--text); }
 
+    /* ── Trigger category entries ───────────────────────────────── */
+    .trig-entries {
+      margin-top: .65rem;
+      padding-top: .65rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: .45rem;
+    }
+    .trig-entry { font-size: .87rem; line-height: 1.55; }
+    .trig-card-name {
+      color: var(--gold);
+      font-weight: 600;
+      margin-right: .35rem;
+    }
+    .trig-card-name::after { content: ':'; }
+    .trig-line { color: var(--muted); }
+
+    /* Activated ability text used as heading */
+    .act-ability { font-size: .87rem; font-weight: normal; color: var(--text); }
+
+    /* ── Mana icons ─────────────────────────────────────────────── */
+    .ms.ms-cost { font-size: .9em; vertical-align: -.1em; }
+
     @media (max-width: 560px) {
       header h1 { font-size: 1.7rem; }
       .dl-row { margin-left: 0; }
@@ -511,6 +536,29 @@ function h(str) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// Replaces {T} {B} {W} etc. with inline mana-font icons.
+// Apply AFTER h() so HTML special chars are already escaped.
+const MANA_ICON = {
+  W:'ms-w',U:'ms-u',B:'ms-b',R:'ms-r',G:'ms-g',C:'ms-c',
+  T:'ms-tap',Q:'ms-untap',E:'ms-e',S:'ms-s',P:'ms-p',
+  X:'ms-x',Y:'ms-y',Z:'ms-z',
+  '0':'ms-0','1':'ms-1','2':'ms-2','3':'ms-3','4':'ms-4',
+  '5':'ms-5','6':'ms-6','7':'ms-7','8':'ms-8','9':'ms-9',
+  '10':'ms-10','11':'ms-11','12':'ms-12','13':'ms-13','14':'ms-14',
+  '15':'ms-15','16':'ms-16','17':'ms-17','18':'ms-18','19':'ms-19','20':'ms-20',
+};
+function renderMana(str) {
+  return str.replace(/\{([^}]+)\}/g, (full, sym) => {
+    const s = sym.toUpperCase();
+    if (MANA_ICON[s]) return `<i class="ms ms-cost ${MANA_ICON[s]}"></i>`;
+    // Hybrid / Phyrexian: {W/U}, {W/P}, {2/W}, etc.
+    if (s.includes('/')) return `<i class="ms ms-cost ms-${s.toLowerCase().replace('/', '')}"></i>`;
+    return full;
+  });
+}
+// Combined escape + mana-icon render for oracle text / costs.
+function hm(str) { return renderMana(h(str)); }
+
 function findExplanation(keyword) {
   if (KW[keyword]) return KW[keyword];
   const lower = keyword.toLowerCase();
@@ -615,6 +663,53 @@ function classifyAbilityLines(oracleText, typeLine) {
   }, []);
 }
 
+// Semantic categories for triggered abilities — order matters (first match wins).
+const TRIG_ORDER = [
+  'When this permanent dies',
+  'Whenever a creature dies',
+  'Whenever a card goes to the graveyard',
+  'When this permanent enters the battlefield',
+  'Whenever a creature or permanent enters',
+  'When this permanent leaves the battlefield',
+  'Whenever this creature attacks or blocks',
+  'Whenever this creature deals damage',
+  'Whenever you cast a spell',
+  'At the beginning of upkeep',
+  'At the beginning of end step or combat',
+  'Other triggered abilities',
+];
+function categorizeTrigger(text) {
+  const s = text.toLowerCase();
+  // Self-dies (no "a/another/each creature" before "dies")
+  if (/^when\b.+\bdies\b/.test(s) && !/\b(a |another |each |one or more )(nontoken\s+)?(other\s+)?creature/.test(s))
+    return 'When this permanent dies';
+  // Any creature dies
+  if (/^when(ever)?\b.+\b(creature|token).+\bdies\b/.test(s))
+    return 'Whenever a creature dies';
+  // Card goes to graveyard
+  if (/^when(ever)?\b.+(put into a graveyard|goes to.+graveyard|card.+graveyard)/.test(s))
+    return 'Whenever a card goes to the graveyard';
+  // Self-ETB (no "a/another" creature in cost-side of "enters")
+  if (/^when\b.+\benters(\s+the\s+battlefield)?\b/.test(s) && !/\b(a |another |each )(creature|permanent)/.test(s.split('enters')[0]))
+    return 'When this permanent enters the battlefield';
+  // Any creature/permanent enters
+  if (/^when(ever)?\b.+\benters(\s+the\s+battlefield)?\b/.test(s))
+    return 'Whenever a creature or permanent enters';
+  if (/^when\b.+\bleaves(\s+the\s+battlefield)?\b/.test(s))
+    return 'When this permanent leaves the battlefield';
+  if (/^whenever\b.+\b(attacks?|becomes?\s+blocked)\b/.test(s))
+    return 'Whenever this creature attacks or blocks';
+  if (/^whenever\b.+\bdeals?\s+(combat\s+)?damage\b/.test(s))
+    return 'Whenever this creature deals damage';
+  if (/^whenever\b.+\bcast\b/.test(s))
+    return 'Whenever you cast a spell';
+  if (/^at the beginning of\b.+\bupkeep\b/.test(s))
+    return 'At the beginning of upkeep';
+  if (/^at the beginning of\b.+(end step|draw step|combat)\b/.test(s))
+    return 'At the beginning of end step or combat';
+  return 'Other triggered abilities';
+}
+
 // Returns classified lines for a card, handling double-faced cards per face.
 function getCardAbilityLines(card) {
   if (card.card_faces) {
@@ -709,7 +804,72 @@ function renderResults(totalUnique, kwMap, cards) {
   }
 
   let typeSections = '';
-  for (const type of TYPE_ORDER) {
+
+  // ── Triggered: grouped by semantic category ──────────────────
+  if (groups.Triggered.length) {
+    const catMap = new Map();
+    for (const { card, lines } of groups.Triggered)
+      for (const line of lines) {
+        const cat = categorizeTrigger(line);
+        if (!catMap.has(cat)) catMap.set(cat, []);
+        catMap.get(cat).push({ card, line });
+      }
+    const totalTrig = [...catMap.values()].reduce((n, a) => n + a.length, 0);
+    const rows = TRIG_ORDER
+      .filter(cat => catMap.has(cat))
+      .map(cat => {
+        const items = catMap.get(cat);
+        const entries = items.map(({ card, line }) => `
+          <div class="trig-entry">
+            <span class="trig-card-name">${h(card.name)}</span><span class="trig-line">${hm(line)}</span>
+          </div>`).join('');
+        return `
+        <details class="ca-item">
+          <summary>
+            <span class="ca-name">${h(cat)}</span>
+            <span class="kw-count">${items.length}</span>
+          </summary>
+          <div class="trig-entries">${entries}</div>
+        </details>`;
+      }).join('');
+    typeSections += `
+  <div class="panel">
+    <div class="section-title">${TYPE_LABELS.Triggered} <span class="ab-count">${totalTrig}</span></div>
+    <div class="ab-desc">${TYPE_DESC.Triggered}</div>
+    <div class="ca-list">${rows}</div>
+  </div>`;
+  }
+
+  // ── Activated: grouped by ability text ───────────────────────
+  if (groups.Activated.length) {
+    const abilityMap = new Map();
+    for (const { card, lines } of groups.Activated)
+      for (const line of lines) {
+        if (!abilityMap.has(line)) abilityMap.set(line, new Set());
+        abilityMap.get(line).add(card.name);
+      }
+    const actSorted = [...abilityMap.entries()].sort((a, b) => b[1].size - a[1].size);
+    const rows = actSorted.map(([abilityText, cardNames]) => {
+      const pills = [...cardNames].sort().map(n => `<span class="card-pill">${h(n)}</span>`).join('');
+      return `
+      <details class="ca-item">
+        <summary>
+          <span class="ca-name act-ability">${hm(abilityText)}</span>
+          <span class="kw-count">${cardNames.size} card${cardNames.size !== 1 ? 's' : ''}</span>
+        </summary>
+        <div class="card-pills" style="margin-top:.5rem">${pills}</div>
+      </details>`;
+    }).join('');
+    typeSections += `
+  <div class="panel">
+    <div class="section-title">${TYPE_LABELS.Activated} <span class="ab-count">${abilityMap.size}</span></div>
+    <div class="ab-desc">${TYPE_DESC.Activated}</div>
+    <div class="ca-list">${rows}</div>
+  </div>`;
+  }
+
+  // ── Static / Loyalty / Spell: per-card view ──────────────────
+  for (const type of ['Static', 'Loyalty', 'Spell']) {
     const entries = groups[type];
     if (!entries.length) continue;
     const rows = entries.map(({ card, lines }) => `
@@ -717,9 +877,9 @@ function renderResults(totalUnique, kwMap, cards) {
       <summary>
         <span class="ca-name">${h(card.name)}</span>
         <span class="ca-type">${h(card.type_line || '')}</span>
-        <span class="ca-mana">${h(card.mana_cost || '')}</span>
+        <span class="ca-mana">${hm(card.mana_cost || '')}</span>
       </summary>
-      <div class="ca-oracle">${lines.map(l => h(l)).join('\n')}</div>
+      <div class="ca-oracle">${lines.map(l => hm(l)).join('\n')}</div>
     </details>`).join('');
     typeSections += `
   <div class="panel">
