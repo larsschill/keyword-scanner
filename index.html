@@ -282,6 +282,25 @@
     }
     .btn-dl:hover { border-color: var(--gold-dim); color: var(--text); }
 
+    /* ── Ability type sections ──────────────────────────────────── */
+    .ab-count {
+      background: var(--surface2);
+      border-radius: 12px;
+      color: var(--muted);
+      font-size: .75rem;
+      font-weight: normal;
+      padding: .1rem .5rem;
+      vertical-align: middle;
+      margin-left: .45rem;
+    }
+    .ab-desc {
+      font-size: .82rem;
+      color: var(--muted);
+      font-style: italic;
+      margin-bottom: .9rem;
+    }
+    .ab-desc em { font-style: normal; color: var(--text); }
+
     @media (max-width: 560px) {
       header h1 { font-size: 1.7rem; }
       .dl-row { margin-left: 0; }
@@ -563,6 +582,53 @@ function collectKeywords(cards) {
 }
 
 /* ────────────────────────────────────────────────────────────────
+   ABILITY CLASSIFIER
+──────────────────────────────────────────────────────────────── */
+// Classifies each line of oracle text into one of five ability types.
+function classifyAbilityLines(oracleText, typeLine) {
+  if (!oracleText) return [];
+  return oracleText.split('\n').reduce((acc, raw) => {
+    const t = raw.trim();
+    if (!t) return acc;
+    let type = 'Static';
+    // Loyalty: [+N], [0], [−N], [-N], [−X]
+    if (/^\[[-+−\u2212]?\d*[XY]?\]/.test(t)) {
+      type = 'Loyalty';
+    // Triggered: When / Whenever / At
+    } else if (/^(When(ever)?\b|At\s)/i.test(t)) {
+      type = 'Triggered';
+    } else {
+      // Activated: has ":" and cost before it contains mana/tap symbols or cost verbs
+      const ci = t.indexOf(':');
+      if (ci > 0 && ci < t.length - 1) {
+        const cost = t.slice(0, ci);
+        if (/\{[^}]+\}/.test(cost) ||
+            /\b(Sacrifice|Discard|Remove|Exile|Pay|Reveal|Return)\b/i.test(cost)) {
+          type = 'Activated';
+        }
+      }
+    }
+    // Spell ability: non-triggered, non-activated lines on instants/sorceries
+    if (type === 'Static' && /\b(Instant|Sorcery)\b/.test(typeLine || '')) type = 'Spell';
+    acc.push({ text: t, type });
+    return acc;
+  }, []);
+}
+
+// Returns classified lines for a card, handling double-faced cards per face.
+function getCardAbilityLines(card) {
+  if (card.card_faces) {
+    return card.card_faces.flatMap(f =>
+      f.oracle_text
+        ? classifyAbilityLines(f.oracle_text, f.type_line || card.type_line)
+            .map(item => ({ ...item, face: f.name }))
+        : []
+    );
+  }
+  return classifyAbilityLines(card.oracle_text || '', card.type_line);
+}
+
+/* ────────────────────────────────────────────────────────────────
    RENDER
 ──────────────────────────────────────────────────────────────── */
 function getCardOracle(card) {
@@ -607,32 +673,64 @@ function renderResults(totalUnique, kwMap, cards) {
     }
   }
 
-  // ── Card abilities section ───────────────────────────────────
+  // ── Ability type sections ────────────────────────────────────
+  const TYPE_ORDER  = ['Triggered', 'Activated', 'Static', 'Loyalty', 'Spell'];
+  const TYPE_LABELS = {
+    Triggered: 'Triggered Abilities',
+    Activated: 'Activated Abilities',
+    Static:    'Static Abilities',
+    Loyalty:   'Loyalty Abilities',
+    Spell:     'Spell Abilities',
+  };
+  const TYPE_DESC = {
+    Triggered: '<em>When</em>, <em>Whenever</em>, or <em>At</em> — fires automatically when a condition is met',
+    Activated: '<em>[Cost]: [Effect]</em> — you choose to pay a cost to produce an effect',
+    Static:    'Always-on passive effects that continuously modify the game state',
+    Loyalty:   '<em>[+N]</em> / <em>[0]</em> / <em>[−N]</em> — planeswalker abilities that spend or gain loyalty',
+    Spell:     'One-time effects on instants and sorceries that resolve when cast',
+  };
+
   const abilityCards = cards
-    .filter(c => {
-      const oracle = getCardOracle(c);
-      // Skip basic lands and cards with no oracle text
-      return oracle && !/^Basic Land/.test(c.type_line || '');
-    })
+    .filter(c => !/^Basic Land/.test(c.type_line || ''))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  let caRows = '';
+  // Build per-type groups: { type → [{card, lines[]}] }
+  const groups = {};
+  for (const t of TYPE_ORDER) groups[t] = [];
   for (const card of abilityCards) {
-    const oracle = getCardOracle(card);
-    const mana   = card.mana_cost || '';
-    caRows += `
+    const byType = {};
+    for (const { text, type, face } of getCardAbilityLines(card)) {
+      if (!byType[type]) byType[type] = [];
+      byType[type].push(face ? `[${face}] ${text}` : text);
+    }
+    for (const [type, lines] of Object.entries(byType)) {
+      if (groups[type]) groups[type].push({ card, lines });
+    }
+  }
+
+  let typeSections = '';
+  for (const type of TYPE_ORDER) {
+    const entries = groups[type];
+    if (!entries.length) continue;
+    const rows = entries.map(({ card, lines }) => `
     <details class="ca-item">
       <summary>
         <span class="ca-name">${h(card.name)}</span>
         <span class="ca-type">${h(card.type_line || '')}</span>
-        <span class="ca-mana">${h(mana)}</span>
+        <span class="ca-mana">${h(card.mana_cost || '')}</span>
       </summary>
-      <div class="ca-oracle">${h(oracle)}</div>
-    </details>`;
+      <div class="ca-oracle">${lines.map(l => h(l)).join('\n')}</div>
+    </details>`).join('');
+    typeSections += `
+  <div class="panel">
+    <div class="section-title">${TYPE_LABELS[type]} <span class="ab-count">${entries.length}</span></div>
+    <div class="ab-desc">${TYPE_DESC[type]}</div>
+    <div class="ca-list">${rows}</div>
+  </div>`;
   }
 
   // Store for download functions
-  _results = { totalUnique, kwMap, cards };
+  _results = { totalUnique, kwMap, cards, groups, TYPE_ORDER, TYPE_LABELS };
 
   area.innerHTML = `
   <div class="panel">
@@ -649,10 +747,7 @@ function renderResults(totalUnique, kwMap, cards) {
     <div class="section-title">Keywords — sorted by frequency</div>
     <div class="kw-list">${kwRows}</div>
   </div>
-  <div class="panel">
-    <div class="section-title">Card Abilities — click to expand</div>
-    <div class="ca-list">${caRows}</div>
-  </div>`;
+  ${typeSections}`;
 }
 
 /* ────────────────────────────────────────────────────────────────
@@ -660,7 +755,7 @@ function renderResults(totalUnique, kwMap, cards) {
 ──────────────────────────────────────────────────────────────── */
 let _results = null;
 
-function buildTxtContent({ totalUnique, kwMap, cards }) {
+function buildTxtContent({ totalUnique, kwMap, cards, groups, TYPE_ORDER, TYPE_LABELS }) {
   const line = (ch, n = 52) => ch.repeat(n);
   let out = `MTG Keyword Scanner Results\n${line('=')}\n`;
   out += `${totalUnique} unique cards scanned  |  ${kwMap.size} keywords found\n\n`;
@@ -673,13 +768,14 @@ function buildTxtContent({ totalUnique, kwMap, cards }) {
     out += `  Cards: ${[...cardNames].sort().join(', ')}\n`;
   }
 
-  out += `\n\nCARD ABILITIES\n${line('-')}\n`;
-  const abilityCards = cards
-    .filter(c => getCardOracle(c) && !/^Basic Land/.test(c.type_line || ''))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  for (const card of abilityCards) {
-    out += `\n${card.name}  [${card.type_line || ''}]  ${card.mana_cost || ''}\n`;
-    out += getCardOracle(card).split('\n').map(l => `  ${l}`).join('\n') + '\n';
+  for (const type of TYPE_ORDER) {
+    const entries = groups[type];
+    if (!entries.length) continue;
+    out += `\n\n${TYPE_LABELS[type].toUpperCase()}\n${line('-')}\n`;
+    for (const { card, lines } of entries) {
+      out += `\n${card.name}  [${card.type_line || ''}]\n`;
+      out += lines.map(l => `  ${l}`).join('\n') + '\n';
+    }
   }
   return out;
 }
@@ -697,7 +793,7 @@ function downloadTxt() {
 
 function downloadPdf() {
   if (!_results) return;
-  const { totalUnique, kwMap, cards } = _results;
+  const { totalUnique, kwMap, groups, TYPE_ORDER, TYPE_LABELS } = _results;
 
   const sorted = [...kwMap.entries()].sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
   const kwRows = sorted.map(([kw, { cardNames, explanation }]) => `
@@ -707,14 +803,17 @@ function downloadPdf() {
       <div class="dim small">Cards: ${[...cardNames].sort().join(', ')}</div>
     </div>`).join('');
 
-  const abilityCards = cards
-    .filter(c => getCardOracle(c) && !/^Basic Land/.test(c.type_line || ''))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const caRows = abilityCards.map(card => `
-    <div class="ca">
-      <div class="ca-head"><strong>${card.name}</strong> <span class="dim">${card.type_line || ''}</span> <span class="mana">${card.mana_cost || ''}</span></div>
-      <div class="oracle">${getCardOracle(card).replace(/\n/g, '<br>')}</div>
-    </div>`).join('');
+  let typeSections = '';
+  for (const type of TYPE_ORDER) {
+    const entries = groups[type];
+    if (!entries.length) continue;
+    const rows = entries.map(({ card, lines }) => `
+      <div class="ca">
+        <div class="ca-head"><strong>${card.name}</strong> <span class="dim">${card.type_line || ''}</span></div>
+        <div class="oracle">${lines.map(l => l.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')).join('<br>')}</div>
+      </div>`).join('');
+    typeSections += `<h2>${TYPE_LABELS[type]}</h2>${rows}`;
+  }
 
   const win = window.open('', '_blank');
   win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
@@ -731,14 +830,13 @@ function downloadPdf() {
     .ca-head{margin-bottom:2px}
     .oracle{color:#444;white-space:pre-wrap}
     .dim{color:#777;font-weight:normal}
-    .mana{color:#999;margin-left:6px}
     .small{font-size:10px}
     @media print{body{margin:12px}}
   </style></head><body>
   <h1>MTG Keyword Scanner Results</h1>
   <div class="meta">${totalUnique} unique cards scanned &nbsp;&middot;&nbsp; ${kwMap.size} keywords found</div>
   <h2>Keywords</h2>${kwRows}
-  <h2>Card Abilities</h2>${caRows}
+  ${typeSections}
   <script>window.onload=()=>{window.print()}<\/script>
   </body></html>`);
   win.document.close();
