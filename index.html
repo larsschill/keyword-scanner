@@ -417,7 +417,7 @@ const KW = {
 /* ────────────────────────────────────────────────────────────────
    HELPERS
 ──────────────────────────────────────────────────────────────── */
-const CORS_PROXY = 'https://corsproxy.io/?url=';
+const ALLORIGINS = 'https://api.allorigins.win/get?url=';
 
 function h(str) {
   return String(str)
@@ -448,12 +448,18 @@ function findExplanation(keyword) {
 ──────────────────────────────────────────────────────────────── */
 async function fetchMoxfieldDeck(deckId) {
   const apiUrl = `https://api2.moxfield.com/v2/decks/all/${deckId}`;
-  const res = await fetch(CORS_PROXY + encodeURIComponent(apiUrl));
-  if (!res.ok) {
-    if (res.status === 404) throw new Error('Deck not found. Check the URL or make sure the deck is public.');
-    throw new Error(`Moxfield returned HTTP ${res.status}.`);
+  const res = await fetch(ALLORIGINS + encodeURIComponent(apiUrl));
+  if (!res.ok) throw new Error(`Proxy network error: HTTP ${res.status}.`);
+  const wrapper = await res.json();
+  const code = wrapper.status?.http_code;
+  if (code === 404) throw new Error('Deck not found. Check the URL or make sure the deck is public.');
+  if (code && code !== 200) throw new Error(`Moxfield returned HTTP ${code}.`);
+  if (!wrapper.contents) throw new Error('Empty response — the deck may be private.');
+  try {
+    return JSON.parse(wrapper.contents);
+  } catch {
+    throw new Error('Could not parse deck data from Moxfield.');
   }
-  return res.json();
 }
 
 function extractCardNames(deck) {
