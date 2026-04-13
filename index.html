@@ -572,6 +572,44 @@ const KW = {
   "Partner":         "You can have two commanders if both have Partner. They start in the command zone together and can both be cast.",
   "Suspect":         "A suspected creature can't block and has menace. Players can suspect creatures to hinder defenders.",
   "Role token":      "Role tokens are Aura tokens that enchant creatures. A creature can only have one Role at a time — if a second Role attaches to it, the first is sacrificed. Role types include Cursed, Monster, Royal, Sorcerer, Wicked, Young Hero, and Virtuous.",
+  "Afterlife":       "When this creature dies, create N 1/1 white and black Spirit creature tokens with flying.",
+  "Assist":          "Another player can pay up to {∞} of this spell's generic mana cost when you cast it.",
+  "Backup":          "When this creature enters, put N +1/+1 counters on target creature. If that target is another creature, it gains the following abilities until end of turn.",
+  "Bargain":         "You may sacrifice an artifact, enchantment, or token as you cast this spell.",
+  "Blitz":           "You may cast this for its blitz cost. If you do, it gains haste and 'When this creature dies, draw a card.' Sacrifice it at the beginning of the next end step.",
+  "Channel":         "Discard this card: [effect]. Activate only as a sorcery.",
+  "Cleave":          "You may cast this for its cleave cost. If you do, remove the words in square brackets from its text for this turn.",
+  "Connive":         "Draw a card, then discard a card. If a nonland card is discarded this way, put a +1/+1 counter on this creature.",
+  "Discover":        "Exile cards from the top of your library until you exile a nonland card with mana value N or less. Cast it without paying its mana cost or put it into your hand. Put the rest on the bottom in a random order.",
+  "Disturb":         "You may cast this card from your graveyard transformed for its disturb cost. If it would be put into a graveyard, exile it instead.",
+  "Domain":          "Domain effects count the number of different basic land types among lands you control.",
+  "Encore":          "Pay the encore cost, exile this from your graveyard: For each opponent, create a token copy attacking that player. Tokens gain haste. Sacrifice them at the beginning of the next end step.",
+  "Enlist":          "As this creature attacks, you may tap a nonattacking untapped creature without summoning sickness you control. If you do, add its power to this creature's until end of turn.",
+  "Exploit":         "When this creature enters the battlefield, you may sacrifice a creature.",
+  "Foretell":        "During your turn, you may pay {2} and exile this card from your hand face down. Cast it on a later turn for its foretell cost.",
+  "Gift":            "You may offer a gift to an opponent. If that player accepts, both you and that player gain the gift's effect.",
+  "Impending":       "If cast for its impending cost, this card enters as an enchantment with N time counters and without its other types. At the beginning of your upkeep, remove a time counter. When the last is removed, it becomes its other permanent types again.",
+  "Incubate":        "Create an Incubator token with N +1/+1 counters on it and 'Pay {2}: Transform this artifact.'",
+  "Learn":           "You may reveal a Lesson card from outside the game and put it into your hand, or discard a card to draw a card.",
+  "Manifest":        "Put a card from the top of your library face down as a 2/2 creature token. You may turn it face up at any time by paying its mana cost if it's a creature card.",
+  "Myriad":          "Whenever this creature attacks, for each opponent other than the defending player, create a token copy attacking that opponent. Exile the tokens at end of combat.",
+  "Offspring":       "You may pay the offspring cost. If you do, when this creature enters, create a 1/1 token copy of it.",
+  "Proliferate":     "Choose any number of permanents and/or players, then give each another counter of each kind already there.",
+  "Prototype":       "You may cast this with the prototype's alternative cost, color, and stats. It's still the same card.",
+  "Ravenous":        "This spell can't be countered. When this creature enters, draw a card for each excess mana spent.",
+  "Read ahead":      "Choose a chapter and start with that many lore counters. Add one per turn as a sorcery. Skipped chapters don't trigger.",
+  "Reconfigure":     "Attach to target creature you control; or unattach from a creature. Only as a sorcery. While attached, this isn't a creature.",
+  "Seek":            "Reveal cards from the top of your library until you reveal one matching the criteria. Put it into your hand; put the rest on the bottom in a random order.",
+  "Spree":           "Choose one or more additional modes when casting this spell by paying each mode's additional cost.",
+  "Squad":           "As an additional cost, you may pay {1} any number of times. When this creature enters, create that many tokens that are copies of it.",
+  "Toxic":           "This creature deals N additional poison counters to players it deals combat damage to (10 poison counters = you lose).",
+  "Landcycling":     "Pay the landcycling cost, discard this card: Search your library for a land card, reveal it, put it into your hand, then shuffle.",
+  "Plainscycling":   "Pay the cycling cost, discard this card: Search your library for a Plains card, reveal it, put it into your hand, then shuffle.",
+  "Swampcycling":    "Pay the cycling cost, discard this card: Search your library for a Swamp card, reveal it, put it into your hand, then shuffle.",
+  "Islandcycling":   "Pay the cycling cost, discard this card: Search your library for an Island card, reveal it, put it into your hand, then shuffle.",
+  "Mountaincycling": "Pay the cycling cost, discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle.",
+  "Forestcycling":   "Pay the cycling cost, discard this card: Search your library for a Forest card, reveal it, put it into your hand, then shuffle.",
+  "Typecycling":     "Pay the cycling cost, discard this card: Search your library for a card of the specified type, reveal it, put it into your hand, then shuffle.",
 };
 
 /* ────────────────────────────────────────────────────────────────
@@ -619,6 +657,17 @@ function findExplanation(keyword) {
   return null;
 }
 
+// Returns true if a Static ability line consists solely of keyword declarations
+// (optionally with reminder text in parens) — these are already shown in Keywords.
+function isKeywordOnlyLine(line) {
+  const stripped = line.replace(/\s*\([^)]+\)/g, '').trim();
+  if (!stripped) return false;
+  return stripped.split(/,\s*/).every(part => {
+    const p = part.trim();
+    return p.length > 0 && findExplanation(p) !== null;
+  });
+}
+
 // Parse MTGO / Arena / plain deck list format into unique card names.
 // Handles:
 //   "1 Card Name"        — standard quantity prefix
@@ -660,6 +709,27 @@ async function fetchScryfallCards(names) {
     if (i + SIZE < names.length) await sleep(100);
   }
   return cards;
+}
+
+// Fetches WotC rulings for all non-land cards in parallel batches.
+// Returns Map<cardId, ruling[]> containing only cards with ≥1 ruling.
+async function fetchAllRulings(cards) {
+  const results = new Map();
+  const targets = cards.filter(c => c.rulings_uri && !/^Basic Land/.test(c.type_line || ''));
+  const BATCH = 10;
+  for (let i = 0; i < targets.length; i += BATCH) {
+    await Promise.all(targets.slice(i, i + BATCH).map(async card => {
+      try {
+        const res = await fetch(card.rulings_uri);
+        if (!res.ok) return;
+        const data = await res.json();
+        const rulings = (data.data || []).filter(r => r.source === 'wotc');
+        if (rulings.length) results.set(card.id, rulings);
+      } catch { /* skip on network error */ }
+    }));
+    if (i + BATCH < targets.length) await sleep(100);
+  }
+  return results;
 }
 
 function collectKeywords(cards) {
@@ -786,7 +856,7 @@ function getCardOracle(card) {
   return '';
 }
 
-function renderResults(totalUnique, kwMap, cards) {
+function renderResults(totalUnique, kwMap, cards, rulings) {
   const area = document.getElementById('resultsArea');
   const kwCount = kwMap.size;
 
@@ -844,6 +914,7 @@ function renderResults(totalUnique, kwMap, cards) {
   for (const card of abilityCards) {
     const byType = {};
     for (const { text, type, face } of getCardAbilityLines(card)) {
+      if (type === 'Static' && isKeywordOnlyLine(text)) continue;
       if (!byType[type]) byType[type] = [];
       byType[type].push(face ? `[${face}] ${text}` : text);
     }
@@ -938,15 +1009,24 @@ function renderResults(totalUnique, kwMap, cards) {
   </div>`;
   }
 
-  // ── Card Rulings (lazy-loaded per card) ──────────────────────
-  const rulingRows = abilityCards.map(card => `
-    <details class="ca-item" data-rulings-card data-rulings-uri="${h(card.rulings_uri || '')}">
+  // ── Card Rulings (pre-fetched, only cards with ≥1 ruling) ────
+  const rulingCards = abilityCards.filter(c => rulings.has(c.id));
+  const rulingRows = rulingCards.map(card => {
+    const cardRulings = rulings.get(card.id);
+    return `
+    <details class="ca-item">
       <summary>
         <span class="ca-name">${h(card.name)}</span>
         <span class="ca-type">${h(card.type_line || '')}</span>
+        <span class="kw-count">${cardRulings.length}</span>
       </summary>
-      <div class="rulings-body">Click to load rulings…</div>
-    </details>`).join('');
+      <div class="rulings-body">${cardRulings.map(r => `
+        <div class="ruling">
+          <span class="ruling-date">${h(r.published_at)}</span>
+          <span class="ruling-text">${hm(r.comment)}</span>
+        </div>`).join('')}</div>
+    </details>`;
+  }).join('');
 
   // ── Filter bar ───────────────────────────────────────────────
   const filterDefs = [
@@ -956,7 +1036,7 @@ function renderResults(totalUnique, kwMap, cards) {
     { key: 'static',    label: 'Static',    show: groups.Static.length > 0 },
     { key: 'loyalty',   label: 'Loyalty',   show: groups.Loyalty.length > 0 },
     { key: 'spell',     label: 'Spell',     show: groups.Spell.length > 0 },
-    { key: 'rulings',   label: 'Rulings',   show: abilityCards.length > 0 },
+    { key: 'rulings',   label: 'Rulings',   show: rulingCards.length > 0 },
   ];
   const filterBarHtml = filterDefs
     .filter(d => d.show)
@@ -964,7 +1044,7 @@ function renderResults(totalUnique, kwMap, cards) {
     .join('');
 
   // Store for download functions
-  _results = { totalUnique, kwMap, cards, groups, TYPE_ORDER, TYPE_LABELS };
+  _results = { totalUnique, kwMap, cards, groups, TYPE_ORDER, TYPE_LABELS, rulings, rulingCards };
 
   area.innerHTML = `
   <div class="panel">
@@ -986,8 +1066,8 @@ function renderResults(totalUnique, kwMap, cards) {
   </div>
   ${typeSections}
   <div class="panel" data-section="rulings">
-    <div class="section-title">Card Rulings <span class="ab-count">${abilityCards.length}</span></div>
-    <div class="ab-desc">Official WotC rulings — expand a card to load on demand</div>
+    <div class="section-title">Card Rulings <span class="ab-count">${rulingCards.length}</span></div>
+    <div class="ab-desc">Official WotC rulings for cards in this deck</div>
     <div class="ca-list">${rulingRows}</div>
   </div>`;
 
@@ -995,42 +1075,10 @@ function renderResults(totalUnique, kwMap, cards) {
 }
 
 function attachResultListeners() {
-  // Section visibility toggles
   document.querySelectorAll('.section-toggle').forEach(cb => {
     cb.addEventListener('change', () => {
       const panel = document.querySelector(`[data-section="${cb.value}"]`);
       if (panel) panel.classList.toggle('hidden', !cb.checked);
-    });
-  });
-
-  // Lazy-load WotC rulings when a card's <details> is first opened
-  document.querySelectorAll('[data-rulings-card]').forEach(details => {
-    let loaded = false;
-    details.addEventListener('toggle', async () => {
-      if (!details.open || loaded) return;
-      loaded = true;
-      const body = details.querySelector('.rulings-body');
-      if (!body) return;
-      const uri = details.dataset.rulingsUri;
-      if (!uri) { body.textContent = 'No rulings URI for this card.'; return; }
-      body.textContent = 'Loading…';
-      try {
-        const res = await fetch(uri);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const rulings = (data.data || []).filter(r => r.source === 'wotc');
-        if (!rulings.length) {
-          body.innerHTML = '<span class="ruling-empty">No official rulings for this card.</span>';
-        } else {
-          body.innerHTML = rulings.map(r => `
-            <div class="ruling">
-              <span class="ruling-date">${h(r.published_at)}</span>
-              <span class="ruling-text">${hm(r.comment)}</span>
-            </div>`).join('');
-        }
-      } catch (err) {
-        body.textContent = `Failed to load rulings (${err.message}).`;
-      }
     });
   });
 }
@@ -1040,20 +1088,27 @@ function attachResultListeners() {
 ──────────────────────────────────────────────────────────────── */
 let _results = null;
 
-function buildTxtContent({ totalUnique, kwMap, cards, groups, TYPE_ORDER, TYPE_LABELS }) {
+function getChecked() {
+  return new Set([...document.querySelectorAll('.section-toggle:checked')].map(cb => cb.value));
+}
+
+function buildTxtContent({ totalUnique, kwMap, groups, TYPE_ORDER, TYPE_LABELS, rulings, rulingCards }, checked) {
   const line = (ch, n = 52) => ch.repeat(n);
   let out = `MTG Keyword Scanner Results\n${line('=')}\n`;
   out += `${totalUnique} unique cards scanned  |  ${kwMap.size} keywords found\n\n`;
 
-  out += `KEYWORDS\n${line('-')}\n`;
-  const sorted = [...kwMap.entries()].sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
-  for (const [kw, { cardNames, explanation }] of sorted) {
-    out += `\n${kw} (${cardNames.size} card${cardNames.size !== 1 ? 's' : ''})\n`;
-    if (explanation) out += `  ${explanation}\n`;
-    out += `  Cards: ${[...cardNames].sort().join(', ')}\n`;
+  if (checked.has('keywords')) {
+    out += `KEYWORDS\n${line('-')}\n`;
+    const sorted = [...kwMap.entries()].sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
+    for (const [kw, { cardNames, explanation }] of sorted) {
+      out += `\n${kw} (${cardNames.size} card${cardNames.size !== 1 ? 's' : ''})\n`;
+      if (explanation) out += `  ${explanation}\n`;
+      out += `  Cards: ${[...cardNames].sort().join(', ')}\n`;
+    }
   }
 
   for (const type of TYPE_ORDER) {
+    if (!checked.has(type.toLowerCase())) continue;
     const entries = groups[type];
     if (!entries.length) continue;
     out += `\n\n${TYPE_LABELS[type].toUpperCase()}\n${line('-')}\n`;
@@ -1062,12 +1117,24 @@ function buildTxtContent({ totalUnique, kwMap, cards, groups, TYPE_ORDER, TYPE_L
       out += lines.map(l => `  ${l}`).join('\n') + '\n';
     }
   }
+
+  if (checked.has('rulings') && rulingCards.length) {
+    out += `\n\nCARD RULINGS\n${line('-')}\n`;
+    for (const card of rulingCards) {
+      const cardRulings = rulings.get(card.id) || [];
+      if (!cardRulings.length) continue;
+      out += `\n${card.name}\n`;
+      for (const r of cardRulings)
+        out += `  [${r.published_at}] ${r.comment}\n`;
+    }
+  }
+
   return out;
 }
 
 function downloadTxt() {
   if (!_results) return;
-  const blob = new Blob([buildTxtContent(_results)], { type: 'text/plain;charset=utf-8' });
+  const blob = new Blob([buildTxtContent(_results, getChecked())], { type: 'text/plain;charset=utf-8' });
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(blob),
     download: 'mtg-keywords.txt',
@@ -1078,26 +1145,46 @@ function downloadTxt() {
 
 function downloadPdf() {
   if (!_results) return;
-  const { totalUnique, kwMap, groups, TYPE_ORDER, TYPE_LABELS } = _results;
+  const { totalUnique, kwMap, groups, TYPE_ORDER, TYPE_LABELS, rulings, rulingCards } = _results;
+  const checked = getChecked();
 
-  const sorted = [...kwMap.entries()].sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
-  const kwRows = sorted.map(([kw, { cardNames, explanation }]) => `
-    <div class="kw">
-      <div class="kw-head"><strong>${kw}</strong> <span class="dim">${cardNames.size} card${cardNames.size !== 1 ? 's' : ''}</span></div>
-      ${explanation ? `<div class="desc">${explanation}</div>` : ''}
-      <div class="dim small">Cards: ${[...cardNames].sort().join(', ')}</div>
-    </div>`).join('');
+  function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-  let typeSections = '';
+  let sections = '';
+
+  if (checked.has('keywords') && kwMap.size) {
+    const sorted = [...kwMap.entries()].sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
+    const kwRows = sorted.map(([kw, { cardNames, explanation }]) => `
+      <div class="kw">
+        <div class="kw-head"><strong>${esc(kw)}</strong> <span class="dim">${cardNames.size} card${cardNames.size !== 1 ? 's' : ''}</span></div>
+        ${explanation ? `<div class="desc">${esc(explanation)}</div>` : ''}
+        <div class="dim small">Cards: ${[...cardNames].sort().map(esc).join(', ')}</div>
+      </div>`).join('');
+    sections += `<h2>Keywords</h2>${kwRows}`;
+  }
+
   for (const type of TYPE_ORDER) {
+    if (!checked.has(type.toLowerCase())) continue;
     const entries = groups[type];
     if (!entries.length) continue;
     const rows = entries.map(({ card, lines }) => `
       <div class="ca">
-        <div class="ca-head"><strong>${card.name}</strong> <span class="dim">${card.type_line || ''}</span></div>
-        <div class="oracle">${lines.map(l => l.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')).join('<br>')}</div>
+        <div class="ca-head"><strong>${esc(card.name)}</strong> <span class="dim">${esc(card.type_line || '')}</span></div>
+        <div class="oracle">${lines.map(esc).join('<br>')}</div>
       </div>`).join('');
-    typeSections += `<h2>${TYPE_LABELS[type]}</h2>${rows}`;
+    sections += `<h2>${esc(TYPE_LABELS[type])}</h2>${rows}`;
+  }
+
+  if (checked.has('rulings') && rulingCards.length) {
+    const rows = rulingCards.map(card => {
+      const cardRulings = rulings.get(card.id) || [];
+      return `
+        <div class="ca">
+          <div class="ca-head"><strong>${esc(card.name)}</strong></div>
+          <div class="oracle">${cardRulings.map(r => `[${esc(r.published_at)}] ${esc(r.comment)}`).join('<br>')}</div>
+        </div>`;
+    }).join('');
+    sections += `<h2>Card Rulings</h2>${rows}`;
   }
 
   const win = window.open('', '_blank');
@@ -1120,8 +1207,7 @@ function downloadPdf() {
   </style></head><body>
   <h1>MTG Keyword Scanner Results</h1>
   <div class="meta">${totalUnique} unique cards scanned &nbsp;&middot;&nbsp; ${kwMap.size} keywords found</div>
-  <h2>Keywords</h2>${kwRows}
-  ${typeSections}
+  ${sections}
   <script>window.onload=()=>{window.print()}<\/script>
   </body></html>`);
   win.document.close();
@@ -1152,8 +1238,10 @@ document.getElementById('deckForm').addEventListener('submit', async e => {
   try {
     const cards = await fetchScryfallCards(names);
     const kwMap = collectKeywords(cards);
+    status.innerHTML = `<div class="panel"><div class="status"><span class="spinner"></span>Loading card rulings…</div></div>`;
+    const rulings = await fetchAllRulings(cards);
     status.innerHTML = '';
-    renderResults(names.length, kwMap, cards);
+    renderResults(names.length, kwMap, cards, rulings);
   } catch (err) {
     status.innerHTML = `<div class="error-box">${h(err.message)}</div>`;
   } finally {
