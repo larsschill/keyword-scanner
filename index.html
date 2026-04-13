@@ -226,8 +226,65 @@
       padding: 2rem;
     }
 
+    /* ── Card abilities section ─────────────────────────────── */
+    .ca-list { display: flex; flex-direction: column; gap: .4rem; }
+
+    details.ca-item {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .7rem 1rem;
+    }
+    details.ca-item[open] { border-color: var(--surface2); }
+
+    details.ca-item > summary {
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+      display: flex;
+      align-items: baseline;
+      gap: .6rem;
+      flex-wrap: wrap;
+    }
+    details.ca-item > summary::-webkit-details-marker { display: none; }
+    details.ca-item > summary::before { content: '+ '; color: var(--muted); }
+    details[open].ca-item > summary::before { content: '− '; }
+
+    .ca-name  { font-weight: 600; font-size: .95rem; color: var(--text); }
+    .ca-type  { font-size: .78rem; color: var(--muted); }
+    .ca-mana  { font-size: .78rem; color: #6a6f8a; margin-left: auto; }
+
+    .ca-oracle {
+      margin-top: .65rem;
+      padding-top: .65rem;
+      border-top: 1px solid var(--border);
+      font-size: .87rem;
+      color: var(--muted);
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+
+    /* ── Download buttons ───────────────────────────────────── */
+    .dl-row {
+      display: flex;
+      gap: .5rem;
+      margin-left: auto;
+    }
+    .btn-dl {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: .82rem;
+      padding: .3rem .8rem;
+      transition: border-color .15s, color .15s;
+    }
+    .btn-dl:hover { border-color: var(--gold-dim); color: var(--text); }
+
     @media (max-width: 560px) {
       header h1 { font-size: 1.7rem; }
+      .dl-row { margin-left: 0; }
     }
   </style>
 </head>
@@ -416,6 +473,12 @@ const KW = {
   "Vigilance":       "Attacking doesn't cause this creature to tap.",
   "Ward":            "Whenever this permanent becomes the target of a spell or ability an opponent controls, counter it unless that player pays the ward cost.",
   "Wither":          "This permanent deals damage to creatures in the form of -1/-1 counters instead of regular damage.",
+  "Mill":            "Mill N means put the top N cards of target player's library into their graveyard.",
+  "Treasure":        "Treasure is a token artifact with '{T}, Sacrifice this artifact: Add one mana of any color.'",
+  "Casualty":        "As an additional cost to cast this spell, you may sacrifice a creature with power N or greater. If you do, copy the spell and you may choose new targets for the copy.",
+  "Partner":         "You can have two commanders if both have Partner. They start in the command zone together and can both be cast.",
+  "Suspect":         "A suspected creature can't block and has menace. Players can suspect creatures to hinder defenders.",
+  "Role token":      "Role tokens are Aura tokens that enchant creatures. A creature can only have one Role at a time — if a second Role attaches to it, the first is sacrificed. Role types include Cursed, Monster, Royal, Sorcerer, Wicked, Young Hero, and Virtuous.",
 };
 
 /* ────────────────────────────────────────────────────────────────
@@ -502,49 +565,183 @@ function collectKeywords(cards) {
 /* ────────────────────────────────────────────────────────────────
    RENDER
 ──────────────────────────────────────────────────────────────── */
-function renderResults(totalUnique, kwMap) {
-  const area = document.getElementById('resultsArea');
-  if (kwMap.size === 0) {
-    area.innerHTML = `<div class="panel"><div class="empty-msg">No keyword abilities found in this deck.</div></div>`;
-    return;
+function getCardOracle(card) {
+  if (card.oracle_text) return card.oracle_text;
+  if (card.card_faces) {
+    return card.card_faces
+      .filter(f => f.oracle_text)
+      .map(f => `[${f.name}]\n${f.oracle_text}`)
+      .join('\n\n');
   }
+  return '';
+}
 
-  const sorted  = [...kwMap.entries()].sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
+function renderResults(totalUnique, kwMap, cards) {
+  const area = document.getElementById('resultsArea');
   const kwCount = kwMap.size;
 
-  let rows = '';
-  for (const [kw, { cardNames, explanation }] of sorted) {
-    const n = cardNames.size;
-    const pills = [...cardNames].sort().map(c => `<span class="card-pill">${h(c)}</span>`).join('');
-    const desc = explanation
-      ? `<div class="kw-desc">${h(explanation)}</div>`
-      : `<div class="kw-desc unknown">No explanation available — see the <a href="https://magic.wizards.com/en/rules" target="_blank" rel="noopener">MTG Comprehensive Rules</a>.</div>`;
-
-    rows += `
-    <div class="kw-item">
-      <div class="kw-header">
-        <span class="kw-name">${h(kw)}</span>
-        <span class="kw-count">${n} card${n !== 1 ? 's' : ''}</span>
-      </div>
-      ${desc}
-      <details class="kw-cards">
-        <summary>Show cards with ${h(kw)}</summary>
-        <div class="card-pills">${pills}</div>
-      </details>
-    </div>`;
+  // ── Keyword section ──────────────────────────────────────────
+  let kwRows = '';
+  if (kwCount === 0) {
+    kwRows = '<div class="empty-msg">No keyword abilities found in this deck.</div>';
+  } else {
+    const sorted = [...kwMap.entries()].sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
+    for (const [kw, { cardNames, explanation }] of sorted) {
+      const n = cardNames.size;
+      const pills = [...cardNames].sort().map(c => `<span class="card-pill">${h(c)}</span>`).join('');
+      const desc = explanation
+        ? `<div class="kw-desc">${h(explanation)}</div>`
+        : `<div class="kw-desc unknown">No explanation available — see the <a href="https://magic.wizards.com/en/rules" target="_blank" rel="noopener">MTG Comprehensive Rules</a>.</div>`;
+      kwRows += `
+      <div class="kw-item">
+        <div class="kw-header">
+          <span class="kw-name">${h(kw)}</span>
+          <span class="kw-count">${n} card${n !== 1 ? 's' : ''}</span>
+        </div>
+        ${desc}
+        <details class="kw-cards">
+          <summary>Show cards with ${h(kw)}</summary>
+          <div class="card-pills">${pills}</div>
+        </details>
+      </div>`;
+    }
   }
+
+  // ── Card abilities section ───────────────────────────────────
+  const abilityCards = cards
+    .filter(c => {
+      const oracle = getCardOracle(c);
+      // Skip basic lands and cards with no oracle text
+      return oracle && !/^Basic Land/.test(c.type_line || '');
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  let caRows = '';
+  for (const card of abilityCards) {
+    const oracle = getCardOracle(card);
+    const mana   = card.mana_cost || '';
+    caRows += `
+    <details class="ca-item">
+      <summary>
+        <span class="ca-name">${h(card.name)}</span>
+        <span class="ca-type">${h(card.type_line || '')}</span>
+        <span class="ca-mana">${h(mana)}</span>
+      </summary>
+      <div class="ca-oracle">${h(oracle)}</div>
+    </details>`;
+  }
+
+  // Store for download functions
+  _results = { totalUnique, kwMap, cards };
 
   area.innerHTML = `
   <div class="panel">
     <div class="deck-meta">
       <span class="badge">${totalUnique} unique cards scanned</span>
       <span class="badge">${kwCount} keyword${kwCount !== 1 ? 's' : ''} found</span>
+      <div class="dl-row">
+        <button class="btn-dl" onclick="downloadTxt()">&#8595; .txt</button>
+        <button class="btn-dl" onclick="downloadPdf()">&#8595; .pdf</button>
+      </div>
     </div>
   </div>
   <div class="panel">
     <div class="section-title">Keywords — sorted by frequency</div>
-    <div class="kw-list">${rows}</div>
+    <div class="kw-list">${kwRows}</div>
+  </div>
+  <div class="panel">
+    <div class="section-title">Card Abilities — click to expand</div>
+    <div class="ca-list">${caRows}</div>
   </div>`;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   DOWNLOAD
+──────────────────────────────────────────────────────────────── */
+let _results = null;
+
+function buildTxtContent({ totalUnique, kwMap, cards }) {
+  const line = (ch, n = 52) => ch.repeat(n);
+  let out = `MTG Keyword Scanner Results\n${line('=')}\n`;
+  out += `${totalUnique} unique cards scanned  |  ${kwMap.size} keywords found\n\n`;
+
+  out += `KEYWORDS\n${line('-')}\n`;
+  const sorted = [...kwMap.entries()].sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
+  for (const [kw, { cardNames, explanation }] of sorted) {
+    out += `\n${kw} (${cardNames.size} card${cardNames.size !== 1 ? 's' : ''})\n`;
+    if (explanation) out += `  ${explanation}\n`;
+    out += `  Cards: ${[...cardNames].sort().join(', ')}\n`;
+  }
+
+  out += `\n\nCARD ABILITIES\n${line('-')}\n`;
+  const abilityCards = cards
+    .filter(c => getCardOracle(c) && !/^Basic Land/.test(c.type_line || ''))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  for (const card of abilityCards) {
+    out += `\n${card.name}  [${card.type_line || ''}]  ${card.mana_cost || ''}\n`;
+    out += getCardOracle(card).split('\n').map(l => `  ${l}`).join('\n') + '\n';
+  }
+  return out;
+}
+
+function downloadTxt() {
+  if (!_results) return;
+  const blob = new Blob([buildTxtContent(_results)], { type: 'text/plain;charset=utf-8' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: 'mtg-keywords.txt',
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function downloadPdf() {
+  if (!_results) return;
+  const { totalUnique, kwMap, cards } = _results;
+
+  const sorted = [...kwMap.entries()].sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
+  const kwRows = sorted.map(([kw, { cardNames, explanation }]) => `
+    <div class="kw">
+      <div class="kw-head"><strong>${kw}</strong> <span class="dim">${cardNames.size} card${cardNames.size !== 1 ? 's' : ''}</span></div>
+      ${explanation ? `<div class="desc">${explanation}</div>` : ''}
+      <div class="dim small">Cards: ${[...cardNames].sort().join(', ')}</div>
+    </div>`).join('');
+
+  const abilityCards = cards
+    .filter(c => getCardOracle(c) && !/^Basic Land/.test(c.type_line || ''))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const caRows = abilityCards.map(card => `
+    <div class="ca">
+      <div class="ca-head"><strong>${card.name}</strong> <span class="dim">${card.type_line || ''}</span> <span class="mana">${card.mana_cost || ''}</span></div>
+      <div class="oracle">${getCardOracle(card).replace(/\n/g, '<br>')}</div>
+    </div>`).join('');
+
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>MTG Keyword Scanner Results</title>
+  <style>
+    body{font-family:Arial,sans-serif;font-size:12px;color:#222;margin:24px;line-height:1.5}
+    h1{font-size:17px;margin-bottom:2px}
+    h2{font-size:13px;border-bottom:1px solid #ccc;padding-bottom:3px;margin-top:22px}
+    .meta{font-size:11px;color:#777;margin-bottom:16px}
+    .kw{margin:8px 0 6px;padding-left:8px;border-left:2px solid #ccc}
+    .kw-head{margin-bottom:2px}
+    .desc{color:#444;margin:2px 0}
+    .ca{margin:8px 0 6px;padding-left:8px;border-left:2px solid #ddd}
+    .ca-head{margin-bottom:2px}
+    .oracle{color:#444;white-space:pre-wrap}
+    .dim{color:#777;font-weight:normal}
+    .mana{color:#999;margin-left:6px}
+    .small{font-size:10px}
+    @media print{body{margin:12px}}
+  </style></head><body>
+  <h1>MTG Keyword Scanner Results</h1>
+  <div class="meta">${totalUnique} unique cards scanned &nbsp;&middot;&nbsp; ${kwMap.size} keywords found</div>
+  <h2>Keywords</h2>${kwRows}
+  <h2>Card Abilities</h2>${caRows}
+  <script>window.onload=()=>{window.print()}<\/script>
+  </body></html>`);
+  win.document.close();
 }
 
 /* ────────────────────────────────────────────────────────────────
@@ -573,7 +770,7 @@ document.getElementById('deckForm').addEventListener('submit', async e => {
     const cards = await fetchScryfallCards(names);
     const kwMap = collectKeywords(cards);
     status.innerHTML = '';
-    renderResults(names.length, kwMap);
+    renderResults(names.length, kwMap, cards);
   } catch (err) {
     status.innerHTML = `<div class="error-box">${h(err.message)}</div>`;
   } finally {
