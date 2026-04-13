@@ -320,6 +320,20 @@
     .trig-card-name::after { content: ':'; }
     .trig-line { color: var(--muted); }
 
+    /* Rules note inside trigger category */
+    .trig-rule {
+      font-size: .79rem;
+      color: #5a5f7a;
+      font-style: italic;
+      background: rgba(46,50,68,.5);
+      border-left: 2px solid var(--border);
+      border-radius: 4px;
+      padding: .35rem .7rem;
+      margin-top: .5rem;
+      line-height: 1.5;
+    }
+    .trig-rule strong { color: var(--muted); font-style: normal; }
+
     /* Activated ability text used as heading */
     .act-ability { font-size: .87rem; font-weight: normal; color: var(--text); }
 
@@ -610,6 +624,35 @@ const KW = {
   "Mountaincycling": "Pay the cycling cost, discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle.",
   "Forestcycling":   "Pay the cycling cost, discard this card: Search your library for a Forest card, reveal it, put it into your hand, then shuffle.",
   "Typecycling":     "Pay the cycling cost, discard this card: Search your library for a card of the specified type, reveal it, put it into your hand, then shuffle.",
+
+  // ── Additional keywords from Comprehensive Rules ────────────────
+  "Absorb":          "If a source would deal damage to this creature, prevent N of that damage. Each instance of absorb applies separately to each source.",
+  "Amplify":         "As this creature enters, reveal any number of cards from your hand that share a creature type with it. This creature enters with N +1/+1 counters on it for each card revealed this way.",
+  "Aura Swap":       "Pay the cost: You may exchange this Aura with an Aura card from your hand.",
+  "Boast":           "Pay the cost: [Effect]. This activated ability can only be activated if this creature attacked this turn, and only once per turn.",
+  "Compleated":      "If you paid life for any Phyrexian mana while casting this planeswalker, it enters with 2 fewer loyalty counters for each life paid this way.",
+  "Conspire":        "As you cast this spell, tap two untapped creatures you control that share a color with it. When you do, copy the spell and you may choose new targets for the copy.",
+  "Craft":           "Pay the craft cost, exile this permanent and the specified materials from permanents you control or cards in your graveyard: Return this card transformed from exile.",
+  "Decayed":         "This creature can't block. When this creature attacks, sacrifice it at end of combat.",
+  "Demonstrate":     "When you cast this spell, you may copy it and choose new targets for the copy. If you do, choose an opponent — that player also copies the spell and may choose new targets.",
+  "Dethrone":        "Whenever this creature attacks the player with the most life (or tied for most), put a +1/+1 counter on this creature.",
+  "Disguise":        "You may cast this card face down as a 2/2 creature with ward {2} for {3}. Pay its disguise cost: Turn it face up at any time.",
+  "Epic":            "When this resolves, for the rest of the game you can't cast spells. At the beginning of each of your upkeeps, copy this spell (except its epic ability) and you may choose new targets.",
+  "Evoke":           "You may cast this for its evoke cost. If you do, it's sacrificed when it enters the battlefield (the ETB trigger still fires first).",
+  "Exalted":         "Whenever a creature you control attacks alone, that creature gets +1/+1 until end of turn. Multiple instances of exalted each trigger separately.",
+  "Exhaust":         "This activated ability can only be activated once — for the entire game, not just once per turn.",
+  "Flanking":        "Whenever this creature becomes blocked by a creature without flanking, that blocking creature gets -1/-1 until end of turn.",
+  "For Mirrodin!":   "When this Equipment enters, create a 2/2 red Rebel creature token, then attach this Equipment to it.",
+  "Freerunning":     "You may pay this spell's freerunning cost instead of its mana cost if an Assassin or Rogue you controlled dealt combat damage to a player this turn.",
+  "Frenzy":          "Whenever this creature attacks and isn't blocked, it gets +N/+0 until end of turn.",
+  "Hidden Agenda":   "As this conspiracy card enters the command zone, secretly choose a card name. The named card gains a specified effect.",
+  "Level Up":        "Pay the cost: Put a level counter on this permanent. Activate only as a sorcery. Higher level thresholds grant additional power, toughness, and abilities.",
+  "Living Metal":    "During your turn, this Vehicle is an artifact creature in addition to its other types.",
+  "More Than Meets the Eye": "You may cast this card converted (face down as a Vehicle) by paying an alternative cost instead of its mana cost.",
+  "Plot":            "During your main phase while the stack is empty, pay the plot cost to exile this card from your hand. Cast it for free from exile on a later turn.",
+  "Saddle":          "Tap any number of other untapped creatures you control with total power N or greater: This Mount becomes saddled until end of turn. Activate only as a sorcery.",
+  "Umbra Armor":     "If enchanted permanent would be destroyed, instead remove all damage from it and destroy this Aura. (Protects the enchanted permanent once.)",
+  "Undaunted":       "This spell costs {1} less to cast for each opponent you have beyond the first.",
 };
 
 /* ────────────────────────────────────────────────────────────────
@@ -797,6 +840,61 @@ const TRIG_ORDER = [
   'At the beginning of end step or combat',
   'Other triggered abilities',
 ];
+
+// Rules notes shown inside each trigger category (sourced from CR 603).
+const TRIG_RULES = {
+  'When this permanent dies':
+    '<strong>CR 603.10a — looks back in time:</strong> The ability uses the permanent\'s last known state before it left the battlefield. ' +
+    '<strong>Board wipes:</strong> When multiple permanents die simultaneously (e.g. Wrath of God), each death fires this trigger separately. ' +
+    'If you control Midnight Reaper and 4 other creatures and all five die to a single board wipe, Midnight Reaper\'s trigger fires 5 times — once for each creature death. ' +
+    'All triggers go on the stack in APNAP order after the board wipe resolves.',
+
+  'Whenever a creature dies':
+    '<strong>CR 603.2c + 603.10a — simultaneous deaths:</strong> Each creature dying to a single event (mass removal, sacrifice loop, etc.) creates a separate trigger. ' +
+    'A board wipe killing 10 creatures generates 10 separate triggers from a "whenever a creature dies" ability. ' +
+    'These all go on the stack at once, in APNAP order, after the destroying spell resolves.',
+
+  'Whenever a card goes to the graveyard':
+    '<strong>CR 603.10a — looks back in time:</strong> Characteristics are checked as the card was on the battlefield, not in the graveyard. ' +
+    'If a board wipe sends multiple cards to the graveyard simultaneously, each one fires this trigger separately.',
+
+  'When this permanent enters the battlefield':
+    '<strong>CR 603.6a–b — ETB timing:</strong> Replacement effects (enters tapped, enters with N counters, etc.) apply before the trigger checks — ' +
+    'the permanent is already in its final state when the ETB fires. Tokens entering the battlefield also trigger ETB abilities.',
+
+  'Whenever a creature or permanent enters':
+    '<strong>CR 603.6a — one trigger per object:</strong> If multiple permanents enter simultaneously (e.g. tokens created en masse), each fires the trigger separately. ' +
+    'The triggers all go on the stack in APNAP order after the effect resolves.',
+
+  'When this permanent leaves the battlefield':
+    '<strong>CR 603.6c + 603.10a — looks back in time:</strong> The trigger sees the permanent as it was just before it left, including any attached Auras and Equipment. ' +
+    'This means a leaves-the-battlefield ability on an Aura can still use the enchanted creature\'s characteristics.',
+
+  'Whenever this creature attacks or blocks':
+    '<strong>CR 508–509 — declare step timing:</strong> Attack triggers fire in the Declare Attackers step; block triggers fire in the Declare Blockers step. ' +
+    'Putting a creature onto the battlefield already attacking (via an effect) counts as attacking and fires attack triggers.',
+
+  'Whenever this creature deals damage':
+    '<strong>CR 603.2g — damage must actually be dealt:</strong> If all damage is prevented (by protection, a prevention effect, or similar), this trigger does NOT fire. ' +
+    'Damage reduced to 0 by replacement effects likewise does not trigger.',
+
+  'Whenever you cast a spell':
+    '<strong>CR 603.2 — triggers on cast, not resolution:</strong> This fires the moment the spell is put on the stack. If the spell is later countered, the trigger has already fired and will still resolve. ' +
+    '<strong>Copies</strong> of spells put onto the stack (e.g. via Fork) are NOT cast and do NOT trigger this.',
+
+  'At the beginning of upkeep':
+    '<strong>CR 603.2b — fires before priority:</strong> These trigger at the very start of the upkeep step, before any player receives priority to cast spells or activate abilities. ' +
+    '"At the beginning of YOUR upkeep" fires only on the controller\'s turn; "at the beginning of each upkeep" fires on every player\'s upkeep.',
+
+  'At the beginning of end step or combat':
+    '<strong>CR 603.2b + 514 — cleanup timing:</strong> "Until end of turn" effects end during the cleanup step, which is after end-step triggers resolve. ' +
+    'Multiple end-step triggers from the same event all fire simultaneously and are put on the stack in APNAP order.',
+
+  'Other triggered abilities':
+    '<strong>CR 603.2 — automatic:</strong> All triggered abilities fire automatically when their condition is met — the controller doesn\'t choose whether to trigger them (only whether to put optional ones on the stack). ' +
+    'The controller is whoever controls the source at the moment the ability triggers.',
+};
+
 function categorizeTrigger(text) {
   const s = text.toLowerCase();
   // Self-dies (no "a/another/each creature" before "dies")
@@ -943,12 +1041,15 @@ function renderResults(totalUnique, kwMap, cards, rulings) {
           <div class="trig-entry">
             <span class="trig-card-name">${h(card.name)}</span><span class="trig-line">${hm(line)}</span>
           </div>`).join('');
+        const ruleNote = TRIG_RULES[cat]
+          ? `<div class="trig-rule">${TRIG_RULES[cat]}</div>` : '';
         return `
         <details class="ca-item">
           <summary>
             <span class="ca-name">${h(cat)}</span>
             <span class="kw-count">${items.length}</span>
           </summary>
+          ${ruleNote}
           <div class="trig-entries">${entries}</div>
         </details>`;
       }).join('');
