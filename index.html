@@ -1611,71 +1611,241 @@ function downloadTxt() {
 
 function downloadPdf() {
   if (!_results) return;
-  const { totalUnique, kwMap, groups, TYPE_ORDER, TYPE_LABELS, rulings, rulingCards } = _results;
-  const checked = getChecked();
+  const { totalUnique, kwMap, cards, groups, TYPE_ORDER, TYPE_LABELS, rulings, rulingCards } = _results;
+  const checked   = getChecked();
+  const showLands = document.getElementById('toggleLands')?.checked !== false;
 
   function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  // Escape + inline mana-font symbols
+  function em(s) { return hm(s); }
+  function isLandCard(card) { return /\bLand\b/.test(card?.type_line || ''); }
+
+  // Color identity header icons
+  const colorId   = buildColorIdentity(cards);
+  const COLOR_CI  = ['W','U','B','R','G','C'];
+  const colorIcons = COLOR_CI.filter(c => colorId.has(c))
+    .map(c => `<i class="ms ms-cost ms-${c.toLowerCase()}"></i>`).join(' ');
 
   let sections = '';
 
+  // ── Keywords ────────────────────────────────────────────────
   if (checked.has('keywords') && kwMap.size) {
-    const sorted = [...kwMap.entries()].sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
-    const kwRows = sorted.map(([kw, { cardNames, explanation }]) => `
-      <div class="kw">
-        <div class="kw-head"><strong>${esc(kw)}</strong> <span class="dim">${cardNames.size} card${cardNames.size !== 1 ? 's' : ''}</span></div>
-        ${explanation ? `<div class="desc">${esc(explanation)}</div>` : ''}
-        <div class="dim small">Cards: ${[...cardNames].sort().map(esc).join(', ')}</div>
-      </div>`).join('');
-    sections += `<h2>Keywords</h2>${kwRows}`;
-  }
-
-  for (const type of TYPE_ORDER) {
-    if (!checked.has(type.toLowerCase())) continue;
-    const entries = groups[type];
-    if (!entries.length) continue;
-    const rows = entries.map(({ card, lines }) => `
-      <div class="ca">
-        <div class="ca-head"><strong>${esc(card.name)}</strong> <span class="dim">${esc(card.type_line || '')}</span></div>
-        <div class="oracle">${lines.map(esc).join('<br>')}</div>
-      </div>`).join('');
-    sections += `<h2>${esc(TYPE_LABELS[type])}</h2>${rows}`;
-  }
-
-  if (checked.has('rulings') && rulingCards.length) {
-    const rows = rulingCards.map(card => {
-      const cardRulings = rulings.get(card.id) || [];
+    const sorted = [...kwMap.entries()]
+      .sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
+    const kwHtml = sorted.map(([kw, { cardNames, explanation }]) => {
+      const names = showLands ? [...cardNames] : [...cardNames].filter(n => !isLandCard(_cardMap?.get(n)));
+      if (!names.length) return '';
       return `
-        <div class="ca">
-          <div class="ca-head"><strong>${esc(card.name)}</strong></div>
-          <div class="oracle">${cardRulings.map(r => `[${esc(r.published_at)}] ${esc(r.comment)}`).join('<br>')}</div>
-        </div>`;
+      <div class="kw-entry">
+        <div class="kw-head">
+          <span class="kw-name">${esc(kw)}</span>
+          <span class="badge">${names.length} card${names.length !== 1 ? 's' : ''}</span>
+        </div>
+        ${explanation
+          ? `<div class="kw-desc">${esc(explanation)}</div>`
+          : `<div class="kw-desc unknown">No explanation available — see the MTG Comprehensive Rules.</div>`}
+        <div class="card-list">Cards: ${names.sort().map(esc).join(' · ')}</div>
+      </div>`;
     }).join('');
-    sections += `<h2>Card Rulings</h2>${rows}`;
+    if (kwHtml.trim())
+      sections += `<div class="section">
+        <div class="sec-head"><span>Keywords</span><span class="sec-count">${kwMap.size}</span></div>
+        ${kwHtml}
+      </div>`;
+  }
+
+  // ── Triggered (grouped by category) ─────────────────────────
+  if (checked.has('triggered') && groups.Triggered.length) {
+    const catMap = new Map();
+    for (const { card, lines } of groups.Triggered) {
+      if (!showLands && isLandCard(card)) continue;
+      for (const line of lines) {
+        const cat = categorizeTrigger(line);
+        if (!catMap.has(cat)) catMap.set(cat, []);
+        catMap.get(cat).push({ card, line });
+      }
+    }
+    if (catMap.size) {
+      const total = [...catMap.values()].reduce((n, a) => n + a.length, 0);
+      const trigHtml = TRIG_ORDER.filter(cat => catMap.has(cat)).map(cat => {
+        const items = catMap.get(cat);
+        const entries = items.map(({ card, line }) =>
+          `<div class="trig-entry"><span class="trig-name">${esc(card.name)}:</span> ${em(line)}</div>`
+        ).join('');
+        return `<div class="cat-block">
+          <div class="cat-name">${esc(cat)} <span class="badge">${items.length}</span></div>
+          ${entries}
+        </div>`;
+      }).join('');
+      sections += `<div class="section">
+        <div class="sec-head"><span>Triggered Abilities</span><span class="sec-count">${total}</span></div>
+        ${trigHtml}
+      </div>`;
+    }
+  }
+
+  // ── Activated ────────────────────────────────────────────────
+  if (checked.has('activated') && groups.Activated.length) {
+    const abilityMap = new Map();
+    for (const { card, lines } of groups.Activated) {
+      if (!showLands && isLandCard(card)) continue;
+      for (const line of lines) {
+        if (!abilityMap.has(line)) abilityMap.set(line, new Set());
+        abilityMap.get(line).add(card.name);
+      }
+    }
+    if (abilityMap.size) {
+      const actHtml = [...abilityMap.entries()]
+        .sort((a, b) => b[1].size - a[1].size)
+        .map(([abilityText, cardNames]) => `
+        <div class="kw-entry">
+          <div class="kw-head">
+            <span class="act-text">${em(abilityText)}</span>
+            <span class="badge">${cardNames.size} card${cardNames.size !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="card-list">Cards: ${[...cardNames].sort().map(esc).join(' · ')}</div>
+        </div>`).join('');
+      sections += `<div class="section">
+        <div class="sec-head"><span>Activated Abilities</span><span class="sec-count">${abilityMap.size}</span></div>
+        ${actHtml}
+      </div>`;
+    }
+  }
+
+  // ── Static / Loyalty / Spell ─────────────────────────────────
+  for (const type of ['Static', 'Loyalty', 'Spell']) {
+    if (!checked.has(type.toLowerCase())) continue;
+    const entries = groups[type].filter(({ card }) => showLands || !isLandCard(card));
+    if (!entries.length) continue;
+    const html = entries.map(({ card, lines }) => `
+      <div class="ca-entry">
+        <div class="ca-head">
+          <span class="ca-name">${esc(card.name)}</span>
+          <span class="ca-type">${esc(card.type_line || '')}</span>
+          <span class="ca-cost">${em(card.mana_cost || '')}</span>
+        </div>
+        <div class="ca-oracle">${lines.map(l => em(l)).join('<br>')}</div>
+      </div>`).join('');
+    sections += `<div class="section">
+      <div class="sec-head"><span>${esc(TYPE_LABELS[type])}</span><span class="sec-count">${entries.length}</span></div>
+      ${html}
+    </div>`;
+  }
+
+  // ── Card Rulings ─────────────────────────────────────────────
+  if (checked.has('rulings') && rulingCards.length) {
+    const filtered = rulingCards.filter(c => showLands || !isLandCard(c));
+    if (filtered.length) {
+      const html = filtered.map(card => {
+        const cardRulings = rulings.get(card.id) || [];
+        return `
+        <div class="ca-entry">
+          <div class="ca-head">
+            <span class="ca-name">${esc(card.name)}</span>
+            <span class="ca-type">${esc(card.type_line || '')}</span>
+            <span class="badge">${cardRulings.length} ruling${cardRulings.length !== 1 ? 's' : ''}</span>
+          </div>
+          ${cardRulings.map(r => `
+            <div class="ruling">
+              <span class="ruling-date">${esc(r.published_at)}</span>
+              <span>${em(r.comment)}</span>
+            </div>`).join('')}
+        </div>`;
+      }).join('');
+      sections += `<div class="section">
+        <div class="sec-head"><span>Card Rulings</span><span class="sec-count">${filtered.length}</span></div>
+        ${html}
+      </div>`;
+    }
+  }
+
+  // ── Token Glossary ───────────────────────────────────────────
+  if (checked.has('tokens')) {
+    const tokenMap = buildTokenGlossary(showLands ? cards : cards.filter(c => !isLandCard(c)));
+    if (tokenMap.size) {
+      const tokHtml = [...tokenMap.entries()]
+        .sort((a, b) => b[1].size - a[1].size)
+        .map(([desc, sources]) => `
+        <div class="kw-entry">
+          <div class="token-desc">${em(desc)}</div>
+          <div class="card-list">Source${sources.size !== 1 ? 's' : ''}: ${[...sources].sort().map(esc).join(' · ')}</div>
+        </div>`).join('');
+      sections += `<div class="section">
+        <div class="sec-head"><span>Token Glossary</span><span class="sec-count">${tokenMap.size}</span></div>
+        ${tokHtml}
+      </div>`;
+    }
   }
 
   const win = window.open('', '_blank');
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-  <title>MTG Keyword Scanner Results</title>
-  <style>
-    body{font-family:Arial,sans-serif;font-size:12px;color:#222;margin:24px;line-height:1.5}
-    h1{font-size:17px;margin-bottom:2px}
-    h2{font-size:13px;border-bottom:1px solid #ccc;padding-bottom:3px;margin-top:22px}
-    .meta{font-size:11px;color:#777;margin-bottom:16px}
-    .kw{margin:8px 0 6px;padding-left:8px;border-left:2px solid #ccc}
-    .kw-head{margin-bottom:2px}
-    .desc{color:#444;margin:2px 0}
-    .ca{margin:8px 0 6px;padding-left:8px;border-left:2px solid #ddd}
-    .ca-head{margin-bottom:2px}
-    .oracle{color:#444;white-space:pre-wrap}
-    .dim{color:#777;font-weight:normal}
-    .small{font-size:10px}
-    @media print{body{margin:12px}}
-  </style></head><body>
-  <h1>MTG Keyword Scanner Results</h1>
-  <div class="meta">${totalUnique} unique cards scanned &nbsp;&middot;&nbsp; ${kwMap.size} keywords found</div>
-  ${sections}
-  <script>window.onload=()=>{window.print()}<\/script>
-  </body></html>`);
+  win.document.write(`<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<title>MTG Keyword Scanner</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mana-font@latest/css/mana.min.css">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#1a1a2e;background:#fff;padding:28px 36px;line-height:1.5}
+  /* ── Header ── */
+  .doc-header{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;padding-bottom:12px;margin-bottom:22px;border-bottom:2px solid #c9a84c}
+  .doc-title{font-size:22px;font-weight:700;color:#1a1a2e;letter-spacing:.02em}
+  .doc-sub{font-size:10.5px;color:#666;margin-top:4px}
+  .doc-right{text-align:right;font-size:10px;color:#888}
+  .color-icons{font-size:1.35em;margin-bottom:4px}
+  .ms.ms-cost{font-size:.95em;vertical-align:-.1em}
+  /* ── Section wrapper ── */
+  .section{margin-bottom:20px}
+  .sec-head{display:flex;justify-content:space-between;align-items:center;background:#1a1a2e;color:#c9a84c;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:5px 10px;border-radius:4px 4px 0 0}
+  .sec-count{background:rgba(201,168,76,.2);border-radius:8px;padding:1px 7px;font-size:9px;color:#c9a84c}
+  .badge{background:#f0e8d6;color:#8b5e1a;border-radius:8px;padding:1px 6px;font-size:9px;font-weight:600;white-space:nowrap}
+  /* ── Keyword entries ── */
+  .kw-entry{border:1px solid #e2dbd0;border-top:none;padding:6px 10px;background:#fdfcf8}
+  .kw-head{display:flex;align-items:baseline;gap:8px;margin-bottom:2px;flex-wrap:wrap}
+  .kw-name{font-weight:700;font-size:12px;color:#7a4f0d}
+  .kw-desc{color:#444;margin-bottom:2px;line-height:1.45;font-size:10.5px}
+  .kw-desc.unknown{font-style:italic;color:#999}
+  .card-list{color:#999;font-size:9.5px;line-height:1.4}
+  /* ── Triggered ── */
+  .cat-block{border:1px solid #e2dbd0;border-top:none;padding:5px 10px 5px 12px;background:#fdfcf8}
+  .cat-name{font-weight:600;font-size:10.5px;color:#444;margin-bottom:4px;border-bottom:1px solid #ede8e0;padding-bottom:3px;display:flex;align-items:center;gap:6px}
+  .trig-entry{font-size:10px;color:#333;padding:1.5px 0;line-height:1.45}
+  .trig-name{font-weight:600;color:#7a4f0d}
+  /* ── Card ability entries ── */
+  .ca-entry{border:1px solid #e2dbd0;border-top:none;padding:6px 10px;background:#fdfcf8}
+  .ca-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:3px}
+  .ca-name{font-weight:700;font-size:12px;color:#1a1a2e}
+  .ca-type{color:#999;font-size:9.5px}
+  .ca-cost{margin-left:auto;font-size:1.1em}
+  .ca-oracle{color:#444;white-space:pre-wrap;line-height:1.5;font-size:10.5px}
+  /* ── Activated ability text ── */
+  .act-text{color:#333;font-size:10.5px}
+  /* ── Rulings ── */
+  .ruling{display:flex;gap:8px;padding:2px 0;font-size:10px;color:#444;border-bottom:1px solid #f0ebe3}
+  .ruling:last-child{border-bottom:none}
+  .ruling-date{color:#bbb;flex-shrink:0;width:68px;font-size:9.5px;padding-top:1px}
+  /* ── Tokens ── */
+  .token-desc{font-size:10.5px;color:#333;margin-bottom:2px}
+  /* ── Print ── */
+  @media print{
+    body{padding:14px 18px}
+    .section{page-break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="doc-header">
+  <div>
+    <div class="doc-title">MTG Keyword Scanner</div>
+    <div class="doc-sub">${totalUnique} unique cards &nbsp;·&nbsp; ${kwMap.size} keyword${kwMap.size !== 1 ? 's' : ''} found</div>
+  </div>
+  <div class="doc-right">
+    <div class="color-icons">${colorIcons || '<span style="color:#aaa;font-size:10px">Colorless</span>'}</div>
+    <div>Generated ${new Date().toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})}</div>
+  </div>
+</div>
+${sections}
+<script>window.onload = () => { setTimeout(() => window.print(), 500); }<\/script>
+</body></html>`);
   win.document.close();
 }
 
