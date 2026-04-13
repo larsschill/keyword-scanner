@@ -53,27 +53,36 @@
       margin-bottom: 1.25rem;
     }
 
-    /* ── Input form ─────────────────────────────────────────── */
-    .form-row {
-      display: flex;
-      gap: .75rem;
-      flex-wrap: wrap;
+    /* ── Hint text ──────────────────────────────────────────── */
+    .hint {
+      font-size: .82rem;
+      color: var(--muted);
+      margin-bottom: .65rem;
     }
-    .form-row input {
-      flex: 1;
-      min-width: 260px;
+    .hint strong { color: var(--text); }
+
+    /* ── Textarea ───────────────────────────────────────────── */
+    textarea {
+      width: 100%;
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: 8px;
       color: var(--text);
-      font-size: 1rem;
-      padding: .7rem 1rem;
+      font-family: 'Consolas', 'SF Mono', monospace;
+      font-size: .88rem;
+      line-height: 1.5;
+      padding: .75rem 1rem;
+      resize: vertical;
+      min-height: 180px;
       outline: none;
       transition: border-color .15s;
+      display: block;
+      margin-bottom: .75rem;
     }
-    .form-row input:focus { border-color: var(--gold); }
-    .form-row input::placeholder { color: var(--muted); }
+    textarea:focus { border-color: var(--gold); }
+    textarea::placeholder { color: var(--muted); }
 
+    /* ── Button ─────────────────────────────────────────────── */
     .btn {
       background: var(--gold);
       border: none;
@@ -119,17 +128,12 @@
       margin-bottom: 1.25rem;
     }
 
-    /* ── Deck info bar ──────────────────────────────────────── */
+    /* ── Deck meta bar ──────────────────────────────────────── */
     .deck-meta {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       gap: .75rem;
-    }
-    .deck-name {
-      font-size: 1.2rem;
-      font-weight: 600;
-      color: var(--gold);
     }
     .badge {
       background: var(--surface2);
@@ -224,8 +228,6 @@
 
     @media (max-width: 560px) {
       header h1 { font-size: 1.7rem; }
-      .form-row { flex-direction: column; }
-      .form-row input { min-width: unset; }
     }
   </style>
 </head>
@@ -234,18 +236,20 @@
 
   <header>
     <h1>MTG Keyword Scanner</h1>
-    <p>Enter a Moxfield deck URL to see every keyword ability used — with explanations.</p>
+    <p>Paste your deck list to see every keyword ability used — with explanations.</p>
   </header>
 
   <div class="panel">
-    <form class="form-row" id="deckForm">
-      <input
-        id="deckUrl"
-        type="text"
-        placeholder="https://moxfield.com/decks/..."
-        autocomplete="off"
+    <p class="hint">
+      Paste your deck list below — one card per line.<br>
+      Supported formats: <strong>1 Card Name</strong> &nbsp;|&nbsp; <strong>Card Name</strong> &nbsp;|&nbsp; <strong>1 Card Name (SET) 123</strong>
+    </p>
+    <form id="deckForm">
+      <textarea
+        id="deckText"
+        placeholder="1 Rat King, Pale Piper&#10;1 Putrid Goblin&#10;1 Puppeteer Clique&#10;35 Swamp&#10;..."
         spellcheck="false"
-      />
+      ></textarea>
       <button class="btn" type="submit" id="submitBtn">Scan Keywords</button>
     </form>
   </div>
@@ -266,10 +270,10 @@ const KW = {
   "Amass":           "Put N +1/+1 counters on an Army token you control, creating one first if needed.",
   "Annihilator":     "Whenever this creature attacks, the defending player sacrifices N permanents.",
   "Ascend":          "If you control 10 or more permanents, you get the city's blessing for the rest of the game.",
-  "Awaken":          "If you pay the awaken cost, put N +1/+1 counters on target land you control — it becomes a 0/0 Elemental creature in addition to its other types until end of turn.",
-  "Banding":         "Creatures with banding can attack in a band. You choose how blockers assign damage to banded creatures; blocked banding creatures deal their damage as the attacking player chooses.",
+  "Awaken":          "If you pay the awaken cost, put N +1/+1 counters on target land you control — it becomes a 0/0 Elemental creature in addition to its other types.",
+  "Banding":         "Creatures with banding can attack in a band. You choose how blockers assign damage to banded creatures.",
   "Battle Cry":      "Whenever this creature attacks, each other attacking creature gets +1/+0 until end of turn.",
-  "Bestow":          "If you cast this card for its bestow cost, it's an Aura with enchant creature. It becomes a creature again if it's not attached to one.",
+  "Bestow":          "If you cast this for its bestow cost, it's an Aura with enchant creature. It becomes a creature again if it's not attached to one.",
   "Bloodrush":       "Discard this card: Give target attacking creature a power/toughness bonus until end of turn.",
   "Bloodthirst":     "If an opponent was dealt damage this turn, this creature enters the battlefield with N +1/+1 counters.",
   "Bushido":         "Whenever this creature blocks or becomes blocked, it gets +N/+N until end of turn.",
@@ -417,41 +421,6 @@ const KW = {
 /* ────────────────────────────────────────────────────────────────
    HELPERS
 ──────────────────────────────────────────────────────────────── */
-// Multiple proxies tried in parallel — first success wins
-const PROXIES = [
-  {
-    url: u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-    parse: async r => {
-      if (r.status === 404) throw new Error('DECK_NOT_FOUND');
-      if (!r.ok) throw new Error(`HTTP_${r.status}`);
-      return r.json();
-    },
-  },
-  {
-    url: u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
-    parse: async r => {
-      if (!r.ok) throw new Error(`HTTP_${r.status}`);
-      const w = await r.json();
-      if (w.status?.http_code === 404) throw new Error('DECK_NOT_FOUND');
-      if (!w.contents) throw new Error('EMPTY');
-      try {
-        return JSON.parse(w.contents);
-      } catch {
-        // Response may be truncated — extract card names via regex from partial JSON
-        return extractFromTruncated(w.contents);
-      }
-    },
-  },
-  {
-    url: u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-    parse: async r => {
-      if (r.status === 404) throw new Error('DECK_NOT_FOUND');
-      if (!r.ok) throw new Error(`HTTP_${r.status}`);
-      return r.json();
-    },
-  },
-];
-
 function h(str) {
   return String(str)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -459,11 +428,6 @@ function h(str) {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function extractDeckId(url) {
-  const m = url.match(/moxfield\.com\/decks\/([a-zA-Z0-9_-]+)/);
-  return m ? m[1] : null;
-}
 
 function findExplanation(keyword) {
   if (KW[keyword]) return KW[keyword];
@@ -476,62 +440,31 @@ function findExplanation(keyword) {
   return null;
 }
 
-/* ────────────────────────────────────────────────────────────────
-   API CALLS
-──────────────────────────────────────────────────────────────── */
-async function fetchMoxfieldDeck(deckId) {
-  const apiUrl = `https://api2.moxfield.com/v2/decks/all/${deckId}`;
-  const attempts = PROXIES.map(proxy =>
-    fetch(proxy.url(apiUrl)).then(proxy.parse)
-  );
-  try {
-    return await Promise.any(attempts);
-  } catch (e) {
-    if (e.errors?.some(err => err.message === 'DECK_NOT_FOUND'))
-      throw new Error('Deck not found. Check the URL or make sure the deck is public.');
-    throw new Error('All proxies failed — the deck may be private, or try again in a moment.');
-  }
-}
-
-// Moxfield v2 API structure:
-//   deck.main         = commander card object
-//   deck.mainboard    = { "Card Name": { quantity, boardType, card: {...} }, ... }
-//   deck.sideboard    = same shape
-//   deck.commanders   = same shape (rarely present separately)
-function extractCardNames(deck) {
+// Parse MTGO / Arena / plain deck list format into unique card names.
+// Handles:
+//   "1 Card Name"        — standard quantity prefix
+//   "4x Card Name"       — x-suffix quantity
+//   "1 Card Name (SET) 123" — with set/collector number
+//   "1 Card Name *CMDR*" — with commander tag
+//   "Card Name"          — no quantity
+function parseDeckText(text) {
   const names = new Set();
-  if (deck.main?.name) names.add(deck.main.name);
-  for (const board of ['mainboard', 'sideboard', 'commanders']) {
-    const b = deck[board];
-    if (!b || typeof b !== 'object') continue;
-    for (const entry of Object.values(b))
-      if (entry?.card?.name) names.add(entry.card.name);
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('//') || line.startsWith('#')) continue;
+    const name = line
+      .replace(/^\d+x?\s+/, '')              // strip leading quantity
+      .replace(/\s*\*[^*]+\*\s*/g, '')       // strip *CMDR* etc.
+      .replace(/\s*\([A-Z0-9]+\)\s*\d*$/, '') // strip (SET) 123
+      .trim();
+    if (name) names.add(name);
   }
   return [...names];
 }
 
-// Fallback: extract card names from a truncated JSON string via regex
-function extractFromTruncated(raw) {
-  const deckNameMatch = raw.match(/"name":"([^"]+)"/);
-  const deckName = deckNameMatch ? deckNameMatch[1] : 'Deck';
-
-  // Board entries look like: "Card Name":{"quantity":1,"boardType":"mainboard"
-  const pattern = /"([^"]+)":\{"quantity":\d+,"boardType":"/g;
-  const mainboard = {};
-  let m;
-  while ((m = pattern.exec(raw)) !== null)
-    mainboard[m[1]] = { card: { name: m[1] } };
-
-  // Also grab commander from the "main" block
-  const mainMatch = raw.match(/"main":\{[^}]{0,300}"name":"([^"]+)"/);
-  if (mainMatch) mainboard[mainMatch[1]] = { card: { name: mainMatch[1] } };
-
-  if (Object.keys(mainboard).length === 0)
-    throw new Error('TRUNCATED');
-
-  return { name: deckName, mainboard };
-}
-
+/* ────────────────────────────────────────────────────────────────
+   API CALLS  (Scryfall only — no CORS proxy needed)
+──────────────────────────────────────────────────────────────── */
 async function fetchScryfallCards(names) {
   const cards = [];
   const SIZE = 75;
@@ -569,19 +502,15 @@ function collectKeywords(cards) {
 /* ────────────────────────────────────────────────────────────────
    RENDER
 ──────────────────────────────────────────────────────────────── */
-function renderResults(deck, kwMap) {
+function renderResults(totalUnique, kwMap) {
   const area = document.getElementById('resultsArea');
   if (kwMap.size === 0) {
     area.innerHTML = `<div class="panel"><div class="empty-msg">No keyword abilities found in this deck.</div></div>`;
     return;
   }
 
-  const sorted = [...kwMap.entries()].sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
-
-  const deckName = h(deck.name || 'Deck');
-  const kwCount  = kwMap.size;
-  const totalCards = Object.values(deck.boards || {})
-    .reduce((n, b) => n + (b.count || 0), 0);
+  const sorted  = [...kwMap.entries()].sort((a, b) => b[1].cardNames.size - a[1].cardNames.size);
+  const kwCount = kwMap.size;
 
   let rows = '';
   for (const [kw, { cardNames, explanation }] of sorted) {
@@ -608,9 +537,8 @@ function renderResults(deck, kwMap) {
   area.innerHTML = `
   <div class="panel">
     <div class="deck-meta">
-      <span class="deck-name">${deckName}</span>
-      <span class="badge">${totalCards} cards</span>
-      <span class="badge">${kwCount} keyword${kwCount !== 1 ? 's' : ''}</span>
+      <span class="badge">${totalUnique} unique cards scanned</span>
+      <span class="badge">${kwCount} keyword${kwCount !== 1 ? 's' : ''} found</span>
     </div>
   </div>
   <div class="panel">
@@ -625,35 +553,27 @@ function renderResults(deck, kwMap) {
 document.getElementById('deckForm').addEventListener('submit', async e => {
   e.preventDefault();
 
-  const url    = document.getElementById('deckUrl').value.trim();
-  const btn    = document.getElementById('submitBtn');
-  const status = document.getElementById('statusArea');
-  const results= document.getElementById('resultsArea');
+  const text    = document.getElementById('deckText').value;
+  const btn     = document.getElementById('submitBtn');
+  const status  = document.getElementById('statusArea');
+  const results = document.getElementById('resultsArea');
 
   results.innerHTML = '';
 
-  const deckId = extractDeckId(url);
-  if (!deckId) {
-    status.innerHTML = `<div class="error-box">Please enter a valid Moxfield deck URL — it should start with <strong>https://moxfield.com/decks/</strong></div>`;
+  const names = parseDeckText(text);
+  if (names.length === 0) {
+    status.innerHTML = `<div class="error-box">No card names found. Paste your deck list with one card per line (e.g. <strong>1 Lightning Bolt</strong>).</div>`;
     return;
   }
 
   btn.disabled = true;
-  status.innerHTML = `<div class="panel"><div class="status"><span class="spinner"></span>Fetching deck from Moxfield&hellip;</div></div>`;
+  status.innerHTML = `<div class="panel"><div class="status"><span class="spinner"></span>Found ${names.length} unique card${names.length !== 1 ? 's' : ''} — fetching keyword data from Scryfall&hellip;</div></div>`;
 
   try {
-    const deck  = await fetchMoxfieldDeck(deckId);
-    const names = extractCardNames(deck);
-
-    if (names.length === 0) throw new Error('No cards found in this deck.');
-
-    status.innerHTML = `<div class="panel"><div class="status"><span class="spinner"></span>Found ${names.length} unique card${names.length !== 1 ? 's' : ''} — fetching keyword data from Scryfall&hellip;</div></div>`;
-
-    const cards   = await fetchScryfallCards(names);
-    const kwMap   = collectKeywords(cards);
-
+    const cards = await fetchScryfallCards(names);
+    const kwMap = collectKeywords(cards);
     status.innerHTML = '';
-    renderResults(deck, kwMap);
+    renderResults(names.length, kwMap);
   } catch (err) {
     status.innerHTML = `<div class="error-box">${h(err.message)}</div>`;
   } finally {
