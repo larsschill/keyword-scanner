@@ -368,7 +368,7 @@
     .filter-bar label:hover { color: var(--text); }
     .filter-bar input[type=checkbox] { accent-color: var(--gold); cursor: pointer; }
     [data-section].hidden { display: none !important; }
-    .kw-item.hidden, .ca-item.hidden, .token-item.hidden { display: none !important; }
+    .kw-item.hidden, .ca-item.hidden, .token-item.hidden, .trig-entry.hidden { display: none !important; }
 
     /* ── Card Rulings ───────────────────────────────────────────── */
     .rulings-body {
@@ -1112,8 +1112,9 @@ function renderResults(totalUnique, kwMap, cards, rulings, notFound = []) {
       const desc = explanation
         ? `<div class="kw-desc">${h(explanation)}</div>`
         : `<div class="kw-desc unknown">No explanation available — see the <a href="https://magic.wizards.com/en/rules" target="_blank" rel="noopener">MTG Comprehensive Rules</a>.</div>`;
+      const kwAllLand = [...cardNames].every(n => { const c = _cardMap.get(n); return c && /\bLand\b/.test(c.type_line || ''); });
       kwRows += `
-      <div class="kw-item">
+      <div class="kw-item"${kwAllLand ? ' data-is-land="1"' : ''}>
         <div class="kw-header">
           <span class="kw-name">${h(kw)}</span>
           <span class="kw-count">${n} card${n !== 1 ? 's' : ''}</span>
@@ -1179,14 +1180,18 @@ function renderResults(totalUnique, kwMap, cards, rulings, notFound = []) {
       .filter(cat => catMap.has(cat))
       .map(cat => {
         const items = catMap.get(cat);
-        const entries = items.map(({ card, line }) => `
-          <div class="trig-entry">
+        const entries = items.map(({ card, line }) => {
+          const isLand = /\bLand\b/.test(card.type_line || '');
+          return `
+          <div class="trig-entry"${isLand ? ' data-is-land="1"' : ''}>
             ${makeCardLink(card.name, 'trig-card-name')}<span class="trig-line">${hm(line)}</span>
-          </div>`).join('');
+          </div>`;
+        }).join('');
+        const catAllLand = items.every(({ card }) => /\bLand\b/.test(card.type_line || ''));
         const ruleNote = TRIG_RULES[cat]
           ? `<div class="trig-rule">${TRIG_RULES[cat]}</div>` : '';
         return `
-        <details class="ca-item">
+        <details class="ca-item"${catAllLand ? ' data-is-land="1"' : ''}>
           <summary>
             <span class="ca-name">${h(cat)}</span>
             <span class="kw-count">${items.length}</span>
@@ -1214,8 +1219,9 @@ function renderResults(totalUnique, kwMap, cards, rulings, notFound = []) {
     const actSorted = [...abilityMap.entries()].sort((a, b) => b[1].size - a[1].size);
     const rows = actSorted.map(([abilityText, cardNames]) => {
       const pills = [...cardNames].sort().map(n => makeCardLink(n)).join('');
+      const actAllLand = [...cardNames].every(n => { const c = _cardMap.get(n); return c && /\bLand\b/.test(c.type_line || ''); });
       return `
-      <details class="ca-item">
+      <details class="ca-item"${actAllLand ? ' data-is-land="1"' : ''}>
         <summary>
           <span class="ca-name act-ability">${hm(abilityText)}</span>
           <span class="kw-count">${cardNames.size} card${cardNames.size !== 1 ? 's' : ''}</span>
@@ -1235,15 +1241,18 @@ function renderResults(totalUnique, kwMap, cards, rulings, notFound = []) {
   for (const type of ['Static', 'Loyalty', 'Spell']) {
     const entries = groups[type];
     if (!entries.length) continue;
-    const rows = entries.map(({ card, lines }) => `
-    <details class="ca-item">
+    const rows = entries.map(({ card, lines }) => {
+      const isLand = /\bLand\b/.test(card.type_line || '');
+      return `
+    <details class="ca-item"${isLand ? ' data-is-land="1"' : ''}>
       <summary>
         ${cardNameSpan(card)}
         <span class="ca-type">${h(card.type_line || '')}</span>
         <span class="ca-mana">${hm(card.mana_cost || '')}</span>
       </summary>
       <div class="ca-oracle">${lines.map(l => hm(l)).join('\n')}</div>
-    </details>`).join('');
+    </details>`;
+    }).join('');
     typeSections += `
   <div class="panel" data-section="${type.toLowerCase()}">
     <div class="section-title">${TYPE_LABELS[type]} <span class="ab-count">${entries.length}</span></div>
@@ -1256,8 +1265,9 @@ function renderResults(totalUnique, kwMap, cards, rulings, notFound = []) {
   const rulingCards = abilityCards.filter(c => rulings.has(c.id));
   const rulingRows = rulingCards.map(card => {
     const cardRulings = rulings.get(card.id);
+    const isLand = /\bLand\b/.test(card.type_line || '');
     return `
-    <details class="ca-item">
+    <details class="ca-item"${isLand ? ' data-is-land="1"' : ''}>
       <summary>
         ${cardNameSpan(card)}
         <span class="ca-type">${h(card.type_line || '')}</span>
@@ -1346,6 +1356,9 @@ function renderResults(totalUnique, kwMap, cards, rulings, notFound = []) {
   </div>
   <div class="panel filter-bar">
     <span class="filter-label">Show:</span>${filterBarHtml}
+    <label style="border-left:1px solid var(--border);padding-left:.65rem;margin-left:.15rem">
+      <input type="checkbox" id="toggleLands" checked> Lands
+    </label>
     <input type="search" class="search-input" id="abilitySearch" placeholder="Filter cards…">
   </div>
   <div class="panel" data-section="stats">
@@ -1419,6 +1432,25 @@ function attachResultListeners() {
     area.addEventListener('mouseout', e => {
       const rt = e.relatedTarget;
       if (!rt || !rt.closest('[data-img]')) preview.style.display = 'none';
+    });
+  }
+
+  // Lands toggle
+  const landToggle = document.getElementById('toggleLands');
+  if (landToggle) {
+    landToggle.addEventListener('change', () => {
+      const hide = !landToggle.checked;
+      // Hide/show items fully composed of land cards
+      document.querySelectorAll('[data-is-land="1"]').forEach(el => {
+        el.classList.toggle('hidden', hide);
+      });
+      // For triggered categories: hide the parent ca-item if all its trig-entries are now hidden
+      document.querySelectorAll('.trig-entries').forEach(container => {
+        const entries = container.querySelectorAll('.trig-entry');
+        if (!entries.length) return;
+        const allHidden = [...entries].every(e => e.classList.contains('hidden'));
+        container.closest('.ca-item').classList.toggle('hidden', hide && allHidden);
+      });
     });
   }
 
