@@ -1828,7 +1828,16 @@ function downloadPdf() {
   /* ── Print ── */
   @media print{
     body{padding:14px 18px}
-    .section{page-break-inside:avoid}
+    /* Section header must never be orphaned at the bottom of a page */
+    .sec-head{break-after:avoid;page-break-after:avoid}
+    /* Each entry stays on one page if possible */
+    .kw-entry,.ca-entry,.cat-block{break-inside:avoid;page-break-inside:avoid}
+    /* Category heading sticks to its first trig-entry */
+    .cat-name{break-after:avoid;page-break-after:avoid}
+    /* Individual ruling rows stay together */
+    .ruling{break-inside:avoid;page-break-inside:avoid}
+    /* Each major section breaks cleanly — allow breaks between entries but not within */
+    .section{break-before:auto;page-break-before:auto}
   }
 </style>
 </head>
